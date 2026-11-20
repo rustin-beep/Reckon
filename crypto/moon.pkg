@@ -1,3 +1,9 @@
 import {
   "vitro/reckon/types",
+  "moonbitlang/x/crypto" @xcrypto,
 }
+
+import {
+  // 仅测试期 oracle（ADR-3）：生产路径禁止 BigInt，见 `secp_field_wbtest.mbt` 文件头。
+  "moonbitlang/core/bigint",
+} for "wbtest"

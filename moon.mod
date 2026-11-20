@@ -11,3 +11,7 @@ keywords = [ ]
 description = "Embeddable EVM execution core in MoonBit"
 
 preferred_target = "native"
+
+import {
+  "moonbitlang/x@0.5.8",
+}

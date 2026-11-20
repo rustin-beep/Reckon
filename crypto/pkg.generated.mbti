@@ -2,15 +2,70 @@
 package "vitro/reckon/crypto"
 
 import {
+  "moonbitlang/core/debug",
   "vitro/reckon/types",
 }
 
 // Values
 pub fn keccak256(BytesView) -> @types.Hash32
 
+pub fn secp_generate_public_key(@types.U256) -> PublicKey raise SecpError
+
+pub fn secp_public_key_to_address(PublicKey) -> @types.Address
+
+pub fn secp_recover(BytesView, Signature) -> PublicKey raise SecpError
+
+pub fn secp_sign(BytesView, @types.U256) -> Signature raise SecpError
+
+pub fn secp_verify(BytesView, PublicKey, Signature) -> Bool raise SecpError
+
 // Errors
+#derive(@debug.Debug)
+pub suberror SecpError {
+  InvalidPrivateKey
+  InvalidScalar
+  InvalidDigestLength(actual~ : Int32)
+  InvalidPublicKey
+  InvalidFieldElement
+  InvalidRecoveryId(id~ : Int32)
+  NotInvertible
+  RecoveryFailed
+}
+pub fn SecpError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+#derive(@debug.Debug)
+type Fe
+
+#derive(@debug.Debug)
+type Fn
+
+#derive(@debug.Debug)
+type Jac
+
+#derive(@debug.Debug)
+pub struct PublicKey {
+  x : Fe
+  y : Fe
+}
+pub fn PublicKey::parse(BytesView) -> Self raise SecpError
+pub fn PublicKey::to_compressed_bytes(Self) -> Bytes
+pub fn PublicKey::to_uncompressed_bytes(Self) -> Bytes
+pub fn PublicKey::x(Self) -> @types.U256
+pub fn PublicKey::y(Self) -> @types.U256
+
+#derive(@debug.Debug)
+pub struct Signature {
+  r : @types.U256
+  s : @types.U256
+  recid : Int32
+}
+pub fn Signature::from_bytes(BytesView, Int32) -> Self raise SecpError
+pub fn Signature::is_low_s(Self) -> Bool
+pub fn Signature::r(Self) -> @types.U256
+pub fn Signature::recid(Self) -> Int32
+pub fn Signature::s(Self) -> @types.U256
+pub fn Signature::to_bytes(Self) -> Bytes
 
 // Type aliases
 

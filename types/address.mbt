@@ -19,6 +19,15 @@ pub fn Address::from_bytes(data : BytesView) -> Address raise DecodeError {
 }
 
 ///|
+/// 调用方已保证恰好 20 字节时的快路径（如 keccak 尾部截取），长度不符直接 abort。
+pub fn Address::from_bytes_unchecked(data : BytesView) -> Address {
+  if data.length() != 20 {
+    abort("Address::from_bytes_unchecked: expected 20 bytes")
+  }
+  { bytes: data.to_owned(), }
+}
+
+///|
 pub fn Address::from_hex(s : String) -> Address raise DecodeError {
   Address::from_bytes(hex_decode(s)[:])
 }

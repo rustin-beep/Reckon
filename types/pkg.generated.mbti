@@ -32,6 +32,7 @@ pub fn Address::as_bytes(Self) -> BytesView
 pub fn Address::compare(Self, Self) -> Int32
 pub fn Address::equal(Self, Self) -> Bool
 pub fn Address::from_bytes(BytesView) -> Self raise DecodeError
+pub fn Address::from_bytes_unchecked(BytesView) -> Self
 pub fn Address::from_hex(String) -> Self raise DecodeError
 pub fn Address::hash(Self) -> Int32
 pub fn Address::hash_combine(Self, Hasher) -> Unit

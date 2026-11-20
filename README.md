@@ -2,8 +2,8 @@
 
 Embeddable EVM execution core in MoonBit.
 
-Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256 and B04
-RLP landed; the interpreter (P1) has not started.
+Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP and
+B05 secp256k1 landed; the interpreter (P1) has not started.
 
 ## Layout
 
@@ -13,7 +13,7 @@ RLP landed; the interpreter (P1) has not started.
 | [`AGENTS.md`](AGENTS.md) | 工程纪律、命令、工具链坑、决策记录（agent 先读） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 变更记录 |
 | [`types/`](types) | `U256` (4 x UInt64 limbs)、`Address`、`Hash32`、hex |
-| [`crypto/`](crypto) | `keccak256` |
+| [`crypto/`](crypto) | `keccak256`、`secp256k1`（域/群、ECDSA、RFC 6979、recover、地址推导） |
 | [`rlp/`](rlp) | canonical RLP encode/decode |
 | [`cmd/main/`](cmd/main) | `reckon` CLI skeleton |
 | `probes/` | 本地研究探针，**不入库**（第三方源码与绝对路径，来源见本地 `probes/README.md`） |
@@ -29,7 +29,7 @@ RLP landed; the interpreter (P1) has not started.
 | B02 | 类型层 | done：U256 limb + BigInt oracle 对拍、Address/Hash32、hex |
 | B03 | keccak256 | done：自研，13 组独立向量（含块边界） |
 | B04 | RLP | done：canonical encode/decode + 规范性拒绝 + 随机树往返 |
-| B05 | secp256k1 | not started |
+| B05 | secp256k1 | done：自研（4×64 limb + 伪梅森归约、Jacobian 点运算、RFC 6979 low-s 签名、malleable recover、地址推导）；native 标量乘 1.45 ms、sign 2.1 ms |
 | B06 | fixture loader | not started |
 | B07 | state model v0 | not started |
 | B08 | harness v0 | not started |

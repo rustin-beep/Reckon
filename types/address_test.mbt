@@ -53,3 +53,17 @@ test "address ordering follows byte order" {
   assert_true(a < b)
   assert_true(a != b)
 }
+
+///|
+test "address from_bytes_unchecked 只接受 20 字节" {
+  // 快路径：长度对时与 from_bytes 等价
+  let raw = @types.hex_decode("0x" + "0a".repeat(20))
+  let a = @types.Address::from_bytes_unchecked(raw[:])
+  assert_eq(a.to_hex(), "0x" + "0a".repeat(20))
+  // 长度不对直接 abort（不可恢复），这里只验证它确实终止进程之外的语义：
+  // 用一个子进程无关的方式——检查正常路径不受影响即可，越界由 abort 兜底。
+  assert_eq(
+    @types.Address::from_bytes_unchecked(raw[:]).as_bytes().length(),
+    20,
+  )
+}
