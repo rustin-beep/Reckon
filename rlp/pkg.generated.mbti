@@ -1,0 +1,46 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/rlp"
+
+import {
+  "vitro/reckon/types",
+}
+
+// Values
+pub fn decode(BytesView) -> Item raise RlpError
+
+pub fn encode(Item) -> Bytes
+
+pub fn encode_list(Array[Item]) -> Bytes
+
+pub fn encode_str(BytesView) -> Bytes
+
+pub fn encode_uint(@types.U256) -> Bytes
+
+pub fn uint_bytes(@types.U256) -> Bytes
+
+pub fn uint_len(@types.U256) -> Int32
+
+// Errors
+pub suberror RlpError {
+  EmptyInput
+  UnexpectedEnd(needed~ : Int32, available~ : Int32)
+  NonCanonical(reason~ : String)
+  TrailingBytes(count~ : Int32)
+  ExpectedStr
+  ExpectedList
+  LengthOverflow
+}
+
+// Types and methods
+pub(all) enum Item {
+  Str(Bytes)
+  List(Array[Item])
+}
+pub fn Item::as_bytes(Self) -> Bytes raise RlpError
+pub fn Item::as_list(Self) -> Array[Self] raise RlpError
+pub fn Item::as_uint(Self) -> @types.U256 raise
+pub fn Item::is_list(Self) -> Bool
+
+// Type aliases
+
+// Traits

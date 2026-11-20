@@ -1,0 +1,144 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/types"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn hex_byte(Byte) -> String
+
+pub fn hex_decode(String) -> Bytes raise DecodeError
+
+pub fn hex_decode_padded(String) -> Bytes raise DecodeError
+
+pub fn hex_encode(BytesView) -> String
+
+// Errors
+#derive(@debug.Debug)
+pub suberror DecodeError {
+  InvalidLength(expected~ : Int32, actual~ : Int32)
+  InvalidHexChar(code~ : Int32)
+  InvalidHexLength(length~ : Int32)
+}
+pub fn DecodeError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+#derive(@debug.Debug)
+pub struct Address {
+  bytes : Bytes
+}
+pub fn Address::as_bytes(Self) -> BytesView
+pub fn Address::compare(Self, Self) -> Int32
+pub fn Address::equal(Self, Self) -> Bool
+pub fn Address::from_bytes(BytesView) -> Self raise DecodeError
+pub fn Address::from_hex(String) -> Self raise DecodeError
+pub fn Address::hash(Self) -> Int32
+pub fn Address::hash_combine(Self, Hasher) -> Unit
+pub fn Address::not_equal(Self, Self) -> Bool
+pub fn Address::op_ge(Self, Self) -> Bool
+pub fn Address::op_gt(Self, Self) -> Bool
+pub fn Address::op_le(Self, Self) -> Bool
+pub fn Address::op_lt(Self, Self) -> Bool
+pub fn Address::output(Self, &Logger) -> Unit
+pub fn Address::to_bytes(Self) -> Bytes
+pub fn Address::to_hex(Self) -> String
+pub fn Address::to_repr(Self) -> @debug.Repr
+pub fn Address::to_string(Self) -> String
+pub fn Address::zero() -> Self
+pub impl Compare for Address
+pub impl Eq for Address
+pub impl Hash for Address
+pub impl Show for Address
+
+#derive(@debug.Debug)
+pub struct Hash32 {
+  bytes : Bytes
+}
+pub fn Hash32::as_bytes(Self) -> BytesView
+pub fn Hash32::compare(Self, Self) -> Int32
+pub fn Hash32::equal(Self, Self) -> Bool
+pub fn Hash32::from_bytes(BytesView) -> Self raise DecodeError
+pub fn Hash32::from_fixed(FixedArray[Byte]) -> Self
+pub fn Hash32::from_hex(String) -> Self raise DecodeError
+pub fn Hash32::hash(Self) -> Int32
+pub fn Hash32::hash_combine(Self, Hasher) -> Unit
+pub fn Hash32::not_equal(Self, Self) -> Bool
+pub fn Hash32::op_ge(Self, Self) -> Bool
+pub fn Hash32::op_gt(Self, Self) -> Bool
+pub fn Hash32::op_le(Self, Self) -> Bool
+pub fn Hash32::op_lt(Self, Self) -> Bool
+pub fn Hash32::output(Self, &Logger) -> Unit
+pub fn Hash32::to_bytes(Self) -> Bytes
+pub fn Hash32::to_hex(Self) -> String
+pub fn Hash32::to_repr(Self) -> @debug.Repr
+pub fn Hash32::to_string(Self) -> String
+pub fn Hash32::zero() -> Self
+pub impl Compare for Hash32
+pub impl Eq for Hash32
+pub impl Hash for Hash32
+pub impl Show for Hash32
+
+#derive(@debug.Debug)
+pub struct U256 {
+  l0 : UInt64
+  l1 : UInt64
+  l2 : UInt64
+  l3 : UInt64
+}
+pub fn U256::add(Self, Self) -> Self
+pub fn U256::addmod(Self, Self, Self) -> Self
+pub fn U256::bit_length(Self) -> Int32
+pub fn U256::byte_at(Self, Int32) -> Self
+pub fn U256::compare(Self, Self) -> Int32
+pub fn U256::div(Self, Self) -> Self
+pub fn U256::equal(Self, Self) -> Bool
+pub fn U256::exp(Self, Self) -> Self
+pub fn U256::from_bytes_be(BytesView) -> Self raise DecodeError
+pub fn U256::from_hex(String) -> Self raise DecodeError
+pub fn U256::from_limbs(UInt64, UInt64, UInt64, UInt64) -> Self
+pub fn U256::from_u64(UInt64) -> Self
+pub fn U256::is_zero(Self) -> Bool
+pub fn U256::land(Self, Self) -> Self
+pub fn U256::limb(Self, Int32) -> UInt64
+pub fn U256::lnot(Self) -> Self
+pub fn U256::lor(Self, Self) -> Self
+pub fn U256::lxor(Self, Self) -> Self
+pub fn U256::max_value() -> Self
+pub fn U256::mod(Self, Self) -> Self
+pub fn U256::mul(Self, Self) -> Self
+pub fn U256::mulmod(Self, Self, Self) -> Self
+pub fn U256::neg(Self) -> Self
+pub fn U256::not_equal(Self, Self) -> Bool
+pub fn U256::one() -> Self
+pub fn U256::op_ge(Self, Self) -> Bool
+pub fn U256::op_gt(Self, Self) -> Bool
+pub fn U256::op_le(Self, Self) -> Bool
+pub fn U256::op_lt(Self, Self) -> Bool
+pub fn U256::output(Self, &Logger) -> Unit
+pub fn U256::overflowing_add(Self, Self) -> (Self, UInt64)
+pub fn U256::overflowing_sub(Self, Self) -> (Self, UInt64)
+pub fn U256::shl(Self, Int32) -> Self
+pub fn U256::shr(Self, Int32) -> Self
+pub fn U256::sub(Self, Self) -> Self
+pub fn U256::to_bytes_be(Self) -> Bytes
+pub fn U256::to_hex(Self) -> String
+pub fn U256::to_repr(Self) -> @debug.Repr
+pub fn U256::to_string(Self) -> String
+pub fn U256::to_u64(Self) -> UInt64
+pub fn U256::zero() -> Self
+pub impl Add for U256
+pub impl BitAnd for U256
+pub impl BitOr for U256
+pub impl BitXOr for U256
+pub impl Compare for U256
+pub impl Div for U256
+pub impl Eq for U256
+pub impl Mod for U256
+pub impl Mul for U256
+pub impl Show for U256
+pub impl Sub for U256
+
+// Type aliases
+
+// Traits

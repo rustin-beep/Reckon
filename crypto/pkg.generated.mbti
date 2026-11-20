@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/crypto"
+
+import {
+  "vitro/reckon/types",
+}
+
+// Values
+pub fn keccak256(BytesView) -> @types.Hash32
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

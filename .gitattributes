@@ -1,0 +1,9 @@
+# 统一索引与各平台的换行：不做这件事时，core.autocrlf=true 会在 Windows 检出时
+# 重写整棵树，导致格式化闸门永远显示“脏”。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.wasm binary
+*.exe binary

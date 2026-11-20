@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # 工具链版本钉死：必须带构建哈希，因为 CDN 只对完整的 key 提供
+  # `binaries/<version>/` 与 `cores/core-<version>.*`（裸 `0.10.21` 返回 403）。
+  # 安装脚本会把 `+` 转义成 `%2B`。
+  MOONBIT_VERSION: "0.10.21+06da1ed44"
+
+jobs:
+  # R11 闸门：只允许 import moonbitlang/* 与 moonbit-community/*。
+  # 单独一个 job，工具链下载慢或不可用时它仍能给出结论。
+  deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/depcheck/go.mod
+
+      - name: 依赖白名单
+        working-directory: tools/depcheck
+        run: |
+          go test ./...
+          go run . ../../moon.mod
+
+  moon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 官方安装脚本（下载页给出的那个），显式传版本号；不用第三方 setup action。
+      - name: 安装 MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s "$MOONBIT_VERSION"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: 工具链版本
+        run: moon version --all
+
+      - name: 类型检查（全部后端）
+        run: moon check --target all
+
+      # fmt 与 .mbti 都是工具链生成物，手改不允许留到提交里。
+      - name: 格式与接口漂移
+        run: |
+          moon fmt
+          moon info
+          git diff --exit-code
+
+      - name: 测试（wasm-gc）
+        run: moon test
+
+      - name: 测试（native）
+        run: moon test --target native
