@@ -241,3 +241,141 @@ test "非法输入：私钥范围、标量范围、recid、摘要长度" {
   let lucky_key = @crypto.secp_recover(digest.as_bytes(), sig_lucky)
   assert_true(@crypto.secp_verify(digest.as_bytes(), lucky_key, sig_lucky))
 }
+
+///|
+/// `SecpError` 变体名（黑盒侧，需要包限定）。
+fn secp_tag(e : @crypto.SecpError) -> String {
+  match e {
+    @crypto.SecpError::InvalidPrivateKey => "InvalidPrivateKey"
+    @crypto.SecpError::InvalidScalar => "InvalidScalar"
+    @crypto.SecpError::InvalidDigestLength(_) => "InvalidDigestLength"
+    @crypto.SecpError::InvalidPublicKey => "InvalidPublicKey"
+    @crypto.SecpError::InvalidSignatureLength(_) => "InvalidSignatureLength"
+    @crypto.SecpError::InvalidRecoveryId(_) => "InvalidRecoveryId"
+    @crypto.SecpError::NotInvertible => "NotInvertible"
+    @crypto.SecpError::RecoveryFailed => "RecoveryFailed"
+  }
+}
+
+///|
+/// 断言抛出指定变体；不抛或抛错变体都 abort。
+fn expect_secp(f : () -> Unit raise @crypto.SecpError, want : String) -> Unit {
+  let mut got = ""
+  try f() catch {
+    e => got = secp_tag(e)
+  } noraise {
+    _ => ()
+  }
+  if got != want {
+    abort(
+      "期望 \{want}，实际 \{if got == "" { "未抛错" } else { got }}",
+    )
+  }
+}
+
+///|
+test "verify 对篡改 s、错 digest、错公钥一律返回 false" {
+  let key = u256_hex(
+    "289c2857d4598e37fb9647507e47a309d6133539bf21a8b9cb6df88fd5232032",
+  )
+  let other_key = u256_hex(
+    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  )
+  let digest = @crypto.keccak256(b"verify-negative"[:])
+  let other_digest = @crypto.keccak256(b"verify-negative-other"[:])
+  let pubkey = @crypto.secp_generate_public_key(key)
+  let other_pubkey = @crypto.secp_generate_public_key(other_key)
+  let sig = @crypto.secp_sign(digest.as_bytes(), key)
+  // 基线：真签名必须通过
+  assert_true(@crypto.secp_verify(digest.as_bytes(), pubkey, sig))
+  // 1) 篡改 s := s - 1（仍在 [1, n-1]，不会触发范围错误）
+  let tampered_s = sig.s() - @types.U256::one()
+  let tampered = @crypto.Signature::from_bytes(
+    @types.hex_decode(
+      @types.hex_encode(sig.r().to_bytes_be()[:]) +
+      @types.hex_encode(tampered_s.to_bytes_be()[:]),
+    )[:],
+    sig.recid(),
+  )
+  assert_true(!@crypto.secp_verify(digest.as_bytes(), pubkey, tampered))
+  // 2) 换 digest
+  assert_true(!@crypto.secp_verify(other_digest.as_bytes(), pubkey, sig))
+  // 3) 换公钥
+  assert_true(!@crypto.secp_verify(digest.as_bytes(), other_pubkey, sig))
+}
+
+///|
+test "错误变体契约：越界坐标、签名长度、recid、零标量、坏私钥" {
+  let digest = @crypto.keccak256(b"variant"[:])
+  // 公钥坐标 x >= p → InvalidPublicKey（不是专门的域元素错误）
+  let x_ge_p = @types.hex_decode(
+    "02fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+  )
+  expect_secp(
+    () => ignore(@crypto.PublicKey::parse(x_ge_p[:])),
+    "InvalidPublicKey",
+  )
+  // 63 字节签名 → InvalidSignatureLength
+  let short = @types.hex_decode("00".repeat(63))
+  expect_secp(
+    () => ignore(@crypto.Signature::from_bytes(short[:], 0)),
+    "InvalidSignatureLength",
+  )
+  // recid = 4 → InvalidRecoveryId
+  let ok = @types.hex_decode("01".repeat(64))
+  expect_secp(
+    () => ignore(@crypto.Signature::from_bytes(ok[:], 4)),
+    "InvalidRecoveryId",
+  )
+  // r = 0 → InvalidScalar
+  let zeros = @types.hex_decode("00".repeat(64))
+  expect_secp(
+    () => ignore(@crypto.Signature::from_bytes(zeros[:], 0)),
+    "InvalidScalar",
+  )
+  // 私钥 0 / n → InvalidPrivateKey
+  expect_secp(
+    () => ignore(@crypto.secp_sign(digest.as_bytes(), @types.U256::zero())),
+    "InvalidPrivateKey",
+  )
+  let n_hex = "fffffffffffffffffffffffffffffffeBAAEDCE6AF48A03BBFD25E8CD0364141"
+  let n_key = u256_hex(n_hex)
+  expect_secp(
+    () => ignore(@crypto.secp_sign(digest.as_bytes(), n_key)),
+    "InvalidPrivateKey",
+  )
+  // 摘要 31 / 33 字节 → InvalidDigestLength
+  for n in [31, 33] {
+    let buf = FixedArray::make(n, b'\x00')
+    expect_secp(
+      () => ignore(@crypto.secp_sign(Bytes::from_array(buf)[:], priv_one())),
+      "InvalidDigestLength",
+    )
+  }
+  // recid 2 的 x = r + n 越界 → RecoveryFailed
+  let sig_overflow = sig_hex(
+    "fffffffffffffffffffffffffffffffeBAAEDCE6AF48A03BBFD25E8CD0364140",
+    "01".repeat(32),
+    2,
+  )
+  expect_secp(
+    () => ignore(@crypto.secp_recover(digest.as_bytes(), sig_overflow)),
+    "RecoveryFailed",
+  )
+}
+
+///|
+test "verify 在 u1G + u2Q = O 时返回 false（不得去调仿射转换）" {
+  // 构造一个「和恰为无穷远」的合法输入：Q = -G，digest 的标量 z 与 r 相等，
+  // 则 u1G + u2Q = (z/s)G + (r/s)(-G) = O。这条路径若改成抛 NotInvertible
+  // 或返回 true，都会让攻击者用 1 字节输入打穿验签口径。
+  let neg_g = @types.hex_decode(
+    "04" +
+    "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" +
+    "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777",
+  )
+  let pubkey = @crypto.PublicKey::parse(neg_g[:])
+  let digest = @types.hex_decode("00".repeat(31) + "2a")
+  let sig = sig_hex("00".repeat(31) + "2a", "00".repeat(31) + "01", 0)
+  assert_true(!@crypto.secp_verify(digest[:], pubkey, sig))
+}

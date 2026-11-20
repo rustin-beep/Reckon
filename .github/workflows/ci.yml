@@ -53,8 +53,10 @@ jobs:
           moon info
           git diff --exit-code
 
+      # 注意：`moon test` 不带 --target 时走 moon.mod 的 preferred_target（native），
+      # 三个后端必须显式声明，否则 wasm-gc 实际不会被执行。
       - name: 测试（wasm-gc）
-        run: moon test
+        run: moon test --target wasm-gc
 
       - name: 测试（js）
         run: moon test --target js

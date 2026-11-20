@@ -26,7 +26,7 @@ pub suberror SecpError {
   InvalidScalar
   InvalidDigestLength(actual~ : Int32)
   InvalidPublicKey
-  InvalidFieldElement
+  InvalidSignatureLength(actual~ : Int32)
   InvalidRecoveryId(id~ : Int32)
   NotInvertible
   RecoveryFailed

@@ -26,8 +26,8 @@ consensus / MPT。验收语料是 EEST v5.4.0 的 state test，判据是账户�
 
 ```bash
 moon check --target all --deny-warn   # wasm / wasm-gc / js / native，warning 即失败
-moon test                              # wasm-gc
-moon test --target js
+moon test --target wasm-gc            # 三后端显式声明；裸 `moon test` 走 preferred_target
+moon test --target js                 # （本仓是 native），不能当 wasm-gc 用
 moon test --target native
 moon fmt && moon info                  # 产物由工具链生成，否则 CI 的 git diff 会红
 moon run cmd/main -- --version
@@ -39,9 +39,19 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
 
 ## 4. 工具链
 
-- 当前：`moonc 0.10.21+06da1ed44`、moon driver `0.1.20261104`、moonrun `0.1.20261117`。
+- 当前：`moonc 0.10.21+06da1ed44`、moon driver `0.1.20261117`、moonrun `0.1.20261117`
+  （driver 与 runner 同 commit `eb64713`；三者必须来自同一个 `binaries/<version>/` 包）。
 - CI pin 在 `MOONBIT_VERSION`，**必须是带构建哈希的完整版本**：CDN 只认
   `binaries/0.10.21+06da1ed44/…` 与 `cores/core-0.10.21+06da1ed44.zip`，裸 `0.10.21` 返回 403。
+- **`moon test` 的默认后端由 `moon.mod` 的 `preferred_target` 决定**（本仓 `native`），
+  不是 wasm-gc。三后端必须逐条写 `--target`；CI 里名为「测试（wasm-gc）」的步骤
+  若只写 `moon test`，实际跑的是 native（2026-11-20 发现并修正）。
+- **工具链三个二进制必须同源**（`moon` / `moonc` / `moonrun` 来自同一个
+  `binaries/<version>/` 包）。混装时 `moon test --target wasm-gc` 会报
+  `invalid test range "\"vitro"`：driver 用 JSON 传 `--test-args`，而版本不匹配的
+  moonrun 只认 legacy `file.mbt:0-8/...`。判定：`moon version --all` 三个版本/commit
+  不一致即中招（本机 2026-11-20 就是 `moon.exe` 停在 0.1.20261104、moonrun 已是
+  0.1.20261117）。修法：从 pin 版本的 zip 里补回 `bin/moon.exe`，旧文件留备份。
 - Windows 上 `moon upgrade` 会失败：它用 Windows PowerShell 5.1 跑安装脚本，`PSModulePath`
   从 pwsh 7 继承后会加载不兼容模块，`Expand-Archive` 报 `ExtractToDirectory` 重载错误
   （上游 PR #2594 已修，尚未进入本机版本）。规避：用 pwsh 7 直接跑

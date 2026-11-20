@@ -30,6 +30,22 @@
   `moon fmt` / `moon info` 漂移检查；wasm-gc / js / native 三后端测试；
   `moon check --deny-warn`，warning 即失败。
 
+### 修复（B05 审阅）
+
+- `secp_verify` 的两条 `false` 分支此前零覆盖（把返回值改成 `true` 后测试仍全绿）：
+  补 4 组负例——篡改 `s`、错 digest、错公钥、以及构造 `Q = -G` 且 `z == r` 使
+  `u1G + u2Q = O` 的边界。两组变异（恒 `true` / 无穷远分支返回 `true`）现在都会红。
+- 错误变体口径统一：删掉只为「坐标越界」存在的 `InvalidFieldElement`，公钥坐标解析
+  越界一律 `InvalidPublicKey`；新增 `InvalidSignatureLength`，`Signature::from_bytes`
+  长度错不再报 `InvalidScalar`。测试改为断言具体变体，不再「抛了就算」。
+- 随机对拍采样改为全 256 位：去掉「最高位清零」的偏置（原实现把 `[2^255, p)` 整段
+  排除在随机覆盖外），按 p / n 各自归约一次得到 canonical 值。
+- 命令口径更正：`moon test` 不带 `--target` 时走 `preferred_target = native`，
+  不是 wasm-gc；CI 的「测试（wasm-gc）」步骤原先只写 `moon test`，实际跑的是 native，
+  现已显式 `--target wasm-gc`（用 pin 版本的官方包本地复现：61/61 通过）。
+  本机此前 `--target wasm-gc` 失败是 `moon.exe` 停在 0.1.20261104、moonrun 已是
+  0.1.20261117 的混装，已从 pin 包补回同源 driver。
+
 ### 修复（首轮审阅）
 
 - 依赖闸不再按行匹配：`import` 与 `{` 分行、路径依赖、注释、字符串里的 `import`
@@ -57,8 +73,8 @@
 ### 验证
 
 - `moon check --target all --deny-warn`：0 error / 0 warning。
-- `moon test`：56/56（wasm-gc）；`--target js`：56/56；`--target native`：56/56
-  （B05 新增 24 条，原 32 条无回归）。
+- 三后端 **61/61**：`moon test --target wasm-gc` / `--target js` / `--target native`
+  全部直接跑。原 32 条无回归，B05 新增 29 条。
 - 从索引物化的干净检出可构建并通过同一套测试。
 - keccak256：13 组基础向量 + 31 组块边界/多块向量（pycryptodome 独立生成，
   覆盖 135/136/137、271/272/273、407/408/409、543/544/545）。

@@ -66,13 +66,38 @@ fn FeLcg::next(self : FeLcg) -> UInt64 {
 }
 
 ///|
-/// 生成 < 2^255 的域元素（最高位清零，必然 < p 且 < n）。
+/// 生成 `[0, p)` 的域元素：取满 256 位后按 p 归约一次（`2^256 < 2p`，减一次够）。
+///
+/// 不用「最高位清零」的做法——那会把 `[2^255, p)` 整段排除在随机覆盖之外，
+/// 高位归约的回归就抓不到了。
 fn FeLcg::fe(self : FeLcg) -> Fe {
-  {
+  let v : Fe = {
     l0: self.next(),
     l1: self.next(),
     l2: self.next(),
-    l3: self.next() & 0x7FFFFFFFFFFFFFFFUL,
+    l3: self.next(),
+  }
+  if fe_cmp(v, fe_p) >= 0 {
+    fe_sub(v, fe_p)
+  } else {
+    v
+  }
+}
+
+///|
+/// 生成 `[0, n)` 的标量：同样取满 256 位后按 n 归约一次。
+fn FeLcg::scalar(self : FeLcg) -> Fn {
+  let v : Fn = {
+    l0: self.next(),
+    l1: self.next(),
+    l2: self.next(),
+    l3: self.next(),
+  }
+  if fn_cmp(v, fn_n) >= 0 {
+    let (r, _) = fn_sub4(v, fn_n)
+    r
+  } else {
+    v
   }
 }
 
@@ -138,15 +163,34 @@ fn check_fn(actual : Fn, expected : Fn) -> Unit {
 }
 
 ///|
-/// 断言闭包抛 `SecpError`（任一变体），返回是否命中。
-fn raises_secp(f : () -> Unit raise SecpError) -> Bool {
-  let mut hit = false
+/// `SecpError` 变体名，便于断言具体错误而不是「抛了就算」。
+fn secp_tag(e : SecpError) -> String {
+  match e {
+    InvalidPrivateKey => "InvalidPrivateKey"
+    InvalidScalar => "InvalidScalar"
+    InvalidDigestLength(_) => "InvalidDigestLength"
+    InvalidPublicKey => "InvalidPublicKey"
+    InvalidSignatureLength(_) => "InvalidSignatureLength"
+    InvalidRecoveryId(_) => "InvalidRecoveryId"
+    NotInvertible => "NotInvertible"
+    RecoveryFailed => "RecoveryFailed"
+  }
+}
+
+///|
+/// 断言闭包抛出指定变体；不抛或抛错变体都 abort。
+fn expect_secp(f : () -> Unit raise SecpError, want : String) -> Unit {
+  let mut got = ""
   try f() catch {
-    _ => hit = true
+    e => got = secp_tag(e)
   } noraise {
     _ => ()
   }
-  hit
+  if got != want {
+    abort(
+      "期望 \{want}，实际 \{if got == "" { "未抛错" } else { got }}",
+    )
+  }
 }
 
 ///|
@@ -199,9 +243,7 @@ test "基域：inv 对拍与零元拒绝" {
   check_fe(fe_inv(pm1), pm1)
   check_fe(fe_inv(fe_one()), fe_one())
   // inv(0) 必须报错，不能返回 0
-  if !raises_secp(() => ignore(fe_inv(fe_zero()))) {
-    abort("inv(0) 应当抛 NotInvertible")
-  }
+  expect_secp(() => ignore(fe_inv(fe_zero())), "NotInvertible")
 }
 
 ///|
@@ -230,14 +272,14 @@ test "基域：32 字节 canonical 编解码与越界拒绝" {
     check_fe(fe_from_be_at(fe_to_be_bytes(a)[:], 0), a)
   }
   // p 本身与 2^256-1 都必须被拒绝
-  if !raises_secp(() => ignore(fe_from_be_at(fe_to_be_bytes(fe_p)[:], 0))) {
-    abort("x = p 应当被拒绝")
-  }
-  if !raises_secp(() => {
-      ignore(fe_from_be_at(@types.U256::max_value().to_bytes_be()[:], 0))
-    }) {
-    abort("x = 2^256-1 应当被拒绝")
-  }
+  expect_secp(
+    () => ignore(fe_from_be_at(fe_to_be_bytes(fe_p)[:], 0)),
+    "InvalidPublicKey",
+  )
+  expect_secp(
+    () => ignore(fe_from_be_at(@types.U256::max_value().to_bytes_be()[:], 0)),
+    "InvalidPublicKey",
+  )
 }
 
 ///|
@@ -258,10 +300,8 @@ test "标量域：边界网格 7×7 的加减乘对拍 BigInt" {
 test "标量域：200 组确定性伪随机对拍 BigInt" {
   let lcg = FeLcg::{ state: 0xABCDEF0123456789UL, }
   for _ in 0..<200 {
-    let a = lcg.fe()
-    let b = lcg.fe()
-    let fa = fn_of_arr(fe_to_arr(a))
-    let fb = fn_of_arr(fe_to_arr(b))
+    let fa = lcg.scalar()
+    let fb = lcg.scalar()
     let ba = big_of_fn(fa)
     let bb = big_of_fn(fb)
     assert_eq(big_of_fn(fn_add(fa, fb)), (ba + bb) % oracle_n)
@@ -274,16 +314,14 @@ test "标量域：200 组确定性伪随机对拍 BigInt" {
 test "标量域：inv 对拍、零元拒绝、n-1 自逆" {
   let lcg = FeLcg::{ state: 0x76543210FEDCBA98UL, }
   for _ in 0..<50 {
-    let raw = lcg.fe()
-    let fa = fn_of_arr(fe_to_arr({ ..raw, l0: raw.l0 | 1UL, }))
+    let raw = lcg.scalar()
+    let fa = { ..raw, l0: raw.l0 | 1UL, }
     check_fn(fn_mul(fa, fn_inv(fa)), one_fn())
     assert_eq(big_of_fn(fn_inv(fa)), big_inv(big_of_fn(fa), oracle_n))
   }
   let nm1 = fn_sub(fn_n, one_fn())
   check_fn(fn_inv(nm1), nm1)
-  if !raises_secp(() => ignore(fn_inv(fn_zero()))) {
-    abort("inv(0) 应当抛 NotInvertible")
-  }
+  expect_secp(() => ignore(fn_inv(fn_zero())), "NotInvertible")
 }
 
 ///|
@@ -313,18 +351,19 @@ test "标量域：摘要归约与 canonical 拒绝" {
     max256 % oracle_n,
   )
   // n 本身不能作为 canonical 标量
-  if !raises_secp(() => ignore(fn_from_be_at(fn_to_be_bytes(fn_n)[:], 0))) {
-    abort("s = n 应当被拒绝")
-  }
+  expect_secp(
+    () => ignore(fn_from_be_at(fn_to_be_bytes(fn_n)[:], 0)),
+    "InvalidScalar",
+  )
   // 零标量同样被拒绝
-  if !raises_secp(() => {
-      ignore(fn_from_be_at(@types.U256::zero().to_bytes_be()[:], 0))
-    }) {
-    abort("s = 0 应当被拒绝")
-  }
+  expect_secp(
+    () => ignore(fn_from_be_at(@types.U256::zero().to_bytes_be()[:], 0)),
+    "InvalidScalar",
+  )
   // 摘要长度不对必须报错
   let short = @types.U256::max_value().to_bytes_be()[:31]
-  if !raises_secp(() => ignore(fn_from_be_bytes_reduced(short))) {
-    abort("31 字节摘要应当被拒绝")
-  }
+  expect_secp(
+    () => ignore(fn_from_be_bytes_reduced(short)),
+    "InvalidDigestLength",
+  )
 }

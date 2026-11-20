@@ -13,10 +13,10 @@ pub suberror SecpError {
   InvalidScalar
   /// 摘要不是 32 字节。
   InvalidDigestLength(actual~ : Int32)
-  /// 公钥编码非法：长度、前缀、坐标越界，或压缩点无法解出曲线上的 y。
+  /// 公钥编码非法：长度、前缀、坐标越界（`x/y >= p`），或压缩点无法解出曲线上的 y。
   InvalidPublicKey
-  /// 32 字节域元素编码越界（值不小于模数）。
-  InvalidFieldElement
+  /// 签名编码长度不是 64 字节。
+  InvalidSignatureLength(actual~ : Int32)
   /// 恢复标识不在 `0..3`。
   InvalidRecoveryId(id~ : Int32)
   /// 标量为零，不可逆。

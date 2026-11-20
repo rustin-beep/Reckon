@@ -53,18 +53,21 @@ B05 secp256k1 landed; the interpreter (P1) has not started.
 
 ## 构建与测试
 
-工具链：moonc **0.10.21**（`moonc v0.10.21+06da1ed44`）、moon driver 0.1.20261104、
-moonrun 0.1.20261117。CI pin 在 `.github/workflows/ci.yml` 的 `MOONBIT_VERSION`，必须是**带构建哈希的完整版本**
+工具链：moonc **0.10.21**（`moonc v0.10.21+06da1ed44`）、moon driver 0.1.20261117、
+moonrun 0.1.20261117（与 driver 同 commit）。CI pin 在 `.github/workflows/ci.yml` 的 `MOONBIT_VERSION`，必须是**带构建哈希的完整版本**
 （CDN 只认 `0.10.21+06da1ed44` 这种 key，裸 `0.10.21` 返回 403）。
 
 ```bash
 moon check --target all --deny-warn   # 全后端，warning 即失败
-moon test                             # wasm-gc
+moon test --target wasm-gc            # 三后端都必须显式给 --target
 moon test --target js
 moon test --target native
 moon run cmd/main -- --version
 cd tools/depcheck && go test ./... && go run . ../../moon.mod   # R11 依赖白名单
 ```
+
+`moon test` 不带 `--target` 时走 `moon.mod` 的 `preferred_target`（本仓是 **native**），
+不是 wasm-gc——三后端要逐一显式声明。
 
 CI 会额外跑 `moon fmt` 与 `moon info`，并要求 `git diff --exit-code` 为空：
 `.mbti` 与格式都由工具链生成，手改即红。

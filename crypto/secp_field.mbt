@@ -538,14 +538,18 @@ fn fe_to_be_bytes(a : Fe) -> Bytes {
 }
 
 ///|
-/// 从 `off` 起解析 32 字节 canonical 域元素；`x >= p` 报 `InvalidFieldElement`。
+/// 从 `off` 起解析 32 字节 canonical 域元素；`x >= p` 报 `InvalidPublicKey`。
+///
+/// 这条路径只服务公钥坐标解析（唯一调用方是 `PublicKey::parse`），所以越界
+/// 在编码层就归到 `InvalidPublicKey`——不再出现「同一个越界、两个错误变体」
+/// 的口径分裂。
 fn fe_from_be_at(data : BytesView, off : Int32) -> Fe raise SecpError {
   if data.length() < off + 32 {
-    raise SecpError::InvalidFieldElement
+    raise SecpError::InvalidPublicKey
   }
   let a = fe_of_arr(load_be32_at(data, off))
   if fe_cmp(a, fe_p) >= 0 {
-    raise SecpError::InvalidFieldElement
+    raise SecpError::InvalidPublicKey
   }
   a
 }

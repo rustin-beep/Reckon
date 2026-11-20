@@ -420,7 +420,7 @@ pub fn Signature::from_bytes(
   recid : Int32,
 ) -> Signature raise SecpError {
   if data.length() != 64 {
-    raise SecpError::InvalidScalar
+    raise SecpError::InvalidSignatureLength(actual=data.length())
   }
   if recid < 0 || recid > 3 {
     raise SecpError::InvalidRecoveryId(id=recid)
