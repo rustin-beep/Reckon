@@ -15,7 +15,8 @@
 
 ## 本地参考树
 
-Vitro 的 `.tmp_moonbit/probes/evmanatomy/` 保留了 vendored 上游源码（未迁移，124 MB）：
+开发机上另有一份 vendored 上游源码（124 MB，**不入库、不属于本仓库**），放在 Vitro 仓库的
+`.tmp_moonbit/probes/evmanatomy/` 下；换机器时按下列 commit 重新克隆即可：
 
 - `ipsilon-evmone-0a50c91`（evmone）
 - `bluealloy-revm-61eb0f2`（revm）

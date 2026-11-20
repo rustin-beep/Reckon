@@ -29,6 +29,7 @@ pub suberror RlpError {
   ExpectedStr
   ExpectedList
   LengthOverflow
+  DepthLimitExceeded(max~ : Int32)
 }
 
 // Types and methods

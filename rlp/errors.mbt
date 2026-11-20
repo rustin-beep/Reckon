@@ -13,4 +13,7 @@ pub suberror RlpError {
   ExpectedStr
   ExpectedList
   LengthOverflow
+  /// 嵌套深度超过上限。EVM 交易结构实际不超过 4 层，上限给足余量即可，
+  /// 目的是把不可信输入挡在递归爆栈之前。
+  DepthLimitExceeded(max~ : Int32)
 }

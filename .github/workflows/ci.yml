@@ -43,8 +43,8 @@ jobs:
       - name: 工具链版本
         run: moon version --all
 
-      - name: 类型检查（全部后端）
-        run: moon check --target all
+      - name: 类型检查（全部后端，warning 即失败）
+        run: moon check --target all --deny-warn
 
       # fmt 与 .mbti 都是工具链生成物，手改不允许留到提交里。
       - name: 格式与接口漂移
@@ -55,6 +55,9 @@ jobs:
 
       - name: 测试（wasm-gc）
         run: moon test
+
+      - name: 测试（js）
+        run: moon test --target js
 
       - name: 测试（native）
         run: moon test --target native

@@ -184,3 +184,38 @@ test "rlp decode never panics on random bytes" {
     }
   }
 }
+
+///|
+test "rlp 深度上限：深层嵌套只 raise 不爆栈" {
+  // 200 层合法嵌套（每层都是单元素列表），native 上直接递归会爆栈。
+  let mut deep = @rlp.Item::Str(b"")
+  for _ in 0..<200 {
+    deep = @rlp.Item::List([deep])
+  }
+  let deep_bytes = @rlp.encode(deep)
+  try ignore(@rlp.decode(deep_bytes[:])) catch {
+    @rlp.RlpError::DepthLimitExceeded(_) => ()
+    _ => fail("expected DepthLimitExceeded")
+  } noraise {
+    _ => fail("expected DepthLimitExceeded")
+  }
+  // 4 层是真实交易结构的量级，必须正常解码。
+  let mut shallow = @rlp.Item::Str(b"")
+  for _ in 0..<4 {
+    shallow = @rlp.Item::List([shallow])
+  }
+  let shallow_bytes = @rlp.encode(shallow)
+  ignore(@rlp.decode(shallow_bytes[:]))
+}
+
+///|
+test "rlp 长度字段接近 Int32 上限时分类为 UnexpectedEnd" {
+  // 0xbb 表示 4 字节长度字段，0x7ffffffb 会让 start + len 溢出成负数。
+  let data = @types.hex_decode("bb7ffffffb")
+  try ignore(@rlp.decode(data[:])) catch {
+    @rlp.RlpError::UnexpectedEnd(_) => ()
+    _ => fail("expected UnexpectedEnd")
+  } noraise {
+    _ => fail("expected UnexpectedEnd")
+  }
+}

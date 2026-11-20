@@ -25,16 +25,17 @@ consensus / MPT。验收语料是 EEST v5.4.0 的 state test，判据是账户�
 ## 3. 命令
 
 ```bash
-moon check --target all          # wasm / wasm-gc / js / native，必须 0 warning
-moon test                         # wasm-gc
+moon check --target all --deny-warn   # wasm / wasm-gc / js / native，warning 即失败
+moon test                              # wasm-gc
+moon test --target js
 moon test --target native
-moon fmt && moon info             # 产物由工具链生成，否则 CI 的 git diff 会红
+moon fmt && moon info                  # 产物由工具链生成，否则 CI 的 git diff 会红
 moon run cmd/main -- --version
 cd tools/depcheck && go test ./... && go run . ../../moon.mod
 ```
 
 CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依赖闸独立 job →
-装工具链 → `check --target all` → `fmt`/`info` 漂移检查 → 双后端测试。
+装工具链 → `check --target all --deny-warn` → `fmt`/`info` 漂移检查 → 三后端测试。
 
 ## 4. 工具链
 

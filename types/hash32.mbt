@@ -18,10 +18,19 @@ pub fn Hash32::from_bytes(data : BytesView) -> Hash32 raise DecodeError {
 }
 
 ///|
-/// 从已经确定恰好 32 字节的数组构造。
-pub fn Hash32::from_fixed(data : FixedArray[Byte]) -> Hash32 {
+/// 从定长数组构造，长度不符时抛 `DecodeError`（与 `from_bytes` 一致）。
+pub fn Hash32::from_fixed(data : FixedArray[Byte]) -> Hash32 raise DecodeError {
   if data.length() != 32 {
-    abort("Hash32::from_fixed: expected 32 bytes")
+    raise DecodeError::InvalidLength(expected=32, actual=data.length())
+  }
+  { bytes: Bytes::from_array(data), }
+}
+
+///|
+/// 调用方已保证恰好 32 字节时的快路径（如 keccak 输出），长度不符直接 abort。
+pub fn Hash32::from_fixed_unchecked(data : FixedArray[Byte]) -> Hash32 {
+  if data.length() != 32 {
+    abort("Hash32::from_fixed_unchecked: expected 32 bytes")
   }
   { bytes: Bytes::from_array(data), }
 }

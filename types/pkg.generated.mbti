@@ -59,7 +59,8 @@ pub fn Hash32::as_bytes(Self) -> BytesView
 pub fn Hash32::compare(Self, Self) -> Int32
 pub fn Hash32::equal(Self, Self) -> Bool
 pub fn Hash32::from_bytes(BytesView) -> Self raise DecodeError
-pub fn Hash32::from_fixed(FixedArray[Byte]) -> Self
+pub fn Hash32::from_fixed(FixedArray[Byte]) -> Self raise DecodeError
+pub fn Hash32::from_fixed_unchecked(FixedArray[Byte]) -> Self
 pub fn Hash32::from_hex(String) -> Self raise DecodeError
 pub fn Hash32::hash(Self) -> Int32
 pub fn Hash32::hash_combine(Self, Hasher) -> Unit

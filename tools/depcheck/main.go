@@ -13,44 +13,132 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 )
 
-// quoted 抓取一行里每个双引号串的内容。
-var quoted = regexp.MustCompile(`"([^"]*)"`)
-
-// depsFromManifest 从 moon.mod 的 import 块里取出依赖串。
-// 本仓库只使用块形式：
+// depsFromManifest 扫描 moon.mod，返回每个 import 块**顶层**的字符串。
 //
-//	import {
-//	  "moonbitlang/x@0.4.6",
-//	}
+// 这里不做按行匹配：`import` 与 `{` 可以分行，依赖也可以写成
+// `"a/b": { path = "../b" }`。按行判断会被纯格式化绕过（评审 P2-1）。
+// 扫描器跳过字符串与注释，找到 `import` 后进入块内按花括号深度取字符串：
+// 深度 1 的字符串是模块名，深度 2 的 `path` 不进入白名单判定。
 func depsFromManifest(src string) []string {
 	var deps []string
-	inImport := false
-	for _, line := range strings.Split(src, "\n") {
-		trimmed := strings.TrimSpace(line)
+	i := 0
+	for i < len(src) {
 		switch {
-		case inImport:
-			if strings.HasPrefix(trimmed, "}") {
-				inImport = false
-				continue
-			}
-			deps = appendQuoted(deps, trimmed)
-		case strings.HasPrefix(trimmed, "import") && strings.Contains(trimmed, "{"):
-			inImport = !strings.Contains(trimmed, "}")
-			deps = appendQuoted(deps, trimmed)
+		case src[i] == '"':
+			i = skipString(src, i)
+		case src[i] == '#':
+			i = skipLine(src, i)
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
+			i = skipLine(src, i)
+		case isWordAt(src, i, "import"):
+			blockDeps, next := parseImportBlock(src, i+len("import"))
+			deps = append(deps, blockDeps...)
+			i = next
+		default:
+			i++
 		}
 	}
 	return deps
 }
 
-func appendQuoted(deps []string, line string) []string {
-	for _, m := range quoted.FindAllStringSubmatch(line, -1) {
-		deps = append(deps, m[1])
+// parseImportBlock 从 `import` 之后开始找 `{`，解析到匹配的 `}`。
+// 如果 `import` 之后先出现别的记号（例如字符串里的单词），原样返回、不取依赖。
+func parseImportBlock(src string, from int) ([]string, int) {
+	i := from
+	for i < len(src) && src[i] != '{' {
+		switch {
+		case src[i] == '#' || (src[i] == '/' && i+1 < len(src) && src[i+1] == '/'):
+			i = skipLine(src, i)
+		case isSpace(src[i]):
+			i++
+		default:
+			return nil, i
+		}
 	}
-	return deps
+	if i >= len(src) {
+		return nil, i
+	}
+
+	var deps []string
+	depth := 0
+	for i < len(src) {
+		switch {
+		case src[i] == '"':
+			end := skipString(src, i)
+			if depth == 1 {
+				deps = append(deps, src[i+1:end-1])
+			}
+			i = end
+		case src[i] == '#' || (src[i] == '/' && i+1 < len(src) && src[i+1] == '/'):
+			i = skipLine(src, i)
+		case src[i] == '{':
+			depth++
+			i++
+		case src[i] == '}':
+			depth--
+			i++
+			if depth == 0 {
+				return deps, i
+			}
+		default:
+			i++
+		}
+	}
+	return deps, i
+}
+
+// skipString 从开引号跳到闭引号之后，处理反斜杠转义。
+func skipString(src string, i int) int {
+	quote := src[i]
+	i++
+	for i < len(src) {
+		switch src[i] {
+		case '\\':
+			i += 2
+		case quote:
+			return i + 1
+		default:
+			i++
+		}
+	}
+	return i
+}
+
+// skipLine 跳到行尾之后。
+func skipLine(src string, i int) int {
+	for i < len(src) && src[i] != '\n' {
+		i++
+	}
+	if i < len(src) {
+		i++
+	}
+	return i
+}
+
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
+}
+
+// isWordAt 判断 i 处是否为独立单词 word（前后不是标识符字符）。
+func isWordAt(src string, i int, word string) bool {
+	if i+len(word) > len(src) || src[i:i+len(word)] != word {
+		return false
+	}
+	if i > 0 && isIdentChar(src[i-1]) {
+		return false
+	}
+	if i+len(word) < len(src) && isIdentChar(src[i+len(word)]) {
+		return false
+	}
+	return true
+}
+
+func isIdentChar(c byte) bool {
+	return c == '_' || c == '-' ||
+		('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
 // modulePath 去掉可选的 "@version" 后缀。

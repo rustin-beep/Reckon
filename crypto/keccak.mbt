@@ -117,5 +117,5 @@ pub fn keccak256(data : BytesView) -> @types.Hash32 {
       out[i * 8 + j] = (lane >> (8 * j)).to_byte()
     }
   }
-  @types.Hash32::from_fixed(out)
+  @types.Hash32::from_fixed_unchecked(out)
 }

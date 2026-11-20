@@ -58,9 +58,10 @@ moonrun 0.1.20261117。CI pin 在 `.github/workflows/ci.yml` 的 `MOONBIT_VERSIO
 （CDN 只认 `0.10.21+06da1ed44` 这种 key，裸 `0.10.21` 返回 403）。
 
 ```bash
-moon check --target all      # wasm / wasm-gc / js / native
-moon test                    # wasm-gc
-moon test --target native    # native
+moon check --target all --deny-warn   # 全后端，warning 即失败
+moon test                             # wasm-gc
+moon test --target js
+moon test --target native
 moon run cmd/main -- --version
 cd tools/depcheck && go test ./... && go run . ../../moon.mod   # R11 依赖白名单
 ```
