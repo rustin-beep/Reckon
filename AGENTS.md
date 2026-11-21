@@ -39,10 +39,15 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
 
 ## 4. 工具链
 
-- 当前：`moonc 0.10.21+06da1ed44`、moon driver `0.1.20261117`、moonrun `0.1.20261117`
-  （driver 与 runner 同 commit `eb64713`；三者必须来自同一个 `binaries/<version>/` 包）。
+- 当前：`moonc 0.10.22+124d61d05`、moon driver `0.1.20261119`、moonrun `0.1.20261119`
+  （driver 与 runner 同 commit `738607b`；三者必须来自同一个 `binaries/<version>/` 包）。
 - CI pin 在 `MOONBIT_VERSION`，**必须是带构建哈希的完整版本**：CDN 只认
-  `binaries/0.10.21+06da1ed44/…` 与 `cores/core-0.10.21+06da1ed44.zip`，裸 `0.10.21` 返回 403。
+  `binaries/0.10.22+124d61d05/…` 与 `cores/core-0.10.22+124d61d05.*`，裸 `0.10.22` 返回 403。
+  **CI 与本地必须同版本**：`moon fmt` 的输出跨版本会漂移，「格式与接口漂移」那一步会红。
+- **干净检出必须先 `moon update`**（2026-11-21 定位）：runner 上没有 registry 索引时，
+  `moon check` 在依赖解析阶段直接失败——`Failed to resolve registry dependency
+  moonbitlang/x … module was not found in the registry`，耗时 0 秒、exit 255，
+  看起来像命令本身坏掉。CI 里已把 `moon update` 放在 check 之前。
 - **`moon test` 的默认后端由 `moon.mod` 的 `preferred_target` 决定**（本仓 `native`），
   不是 wasm-gc。三后端必须逐条写 `--target`；CI 里名为「测试（wasm-gc）」的步骤
   若只写 `moon test`，实际跑的是 native（2026-11-20 发现并修正）。

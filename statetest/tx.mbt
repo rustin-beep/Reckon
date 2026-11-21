@@ -158,13 +158,17 @@ fn as_str(item : @rlp.Item, field : String) -> Bytes raise TxError {
 }
 
 ///|
-/// 整数字段：拒绝前导零（非规范）与超过 32 字节。
+/// 整数字段：拒绝非规范编码与超过 32 字节。
+///
+/// RLP 的整数必须是最小编码，**零只能编码成空串**：单字节 `0x00` 也算非规范
+/// （geth 的 `ErrCanonInt` 同样拒绝）。早先的条件写成 `length > 1 && b[0] == 0`，
+/// 会让一个把 `yParity` 编成 `0x00` 的 typed tx 一路走到「逐字节一致」的假阴性。
 fn as_uint(item : @rlp.Item, field : String) -> @types.U256 raise TxError {
   let b = as_str(item, field)
   if b.length() > 32 {
     raise TxError::IntegerTooLarge(field~)
   }
-  if b.length() > 1 && b[0] == b'\x00' {
+  if b.length() > 0 && b[0] == b'\x00' {
     raise TxError::NonCanonicalInt(field~)
   }
   let v = @types.U256::from_bytes_be(b[:]) catch {

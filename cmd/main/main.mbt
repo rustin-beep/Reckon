@@ -141,7 +141,7 @@ fn print_summary(
     "txbytes=present:\{summary.txbytes_present} missing:\{summary.txbytes_missing}",
   )
   println(
-    "resign=ok:\{summary.resign_ok} mismatch:\{summary.resign_mismatch} skipped:\{summary.resign_skipped} expected_invalid:\{summary.resign_expected_invalid}",
+    "resign=ok:\{summary.resign_ok} mismatch:\{summary.resign_mismatch} skipped:\{summary.resign_skipped} expected_invalid:\{summary.expected_invalid}",
   )
   println("sender=ok:\{summary.sender_ok} mismatch:\{summary.sender_mismatch}")
   println("errors=\{summary.error_count}")
@@ -155,5 +155,26 @@ fn print_summary(
   }
   if total > limit {
     println("... and \{total - limit} more error(s)")
+  }
+  // 预期失败单独一段：它们不影响退出码，但需要能看到细分明细。
+  let expected_total = summary.expected.length()
+  if expected_total > 0 {
+    println(
+      "expected=\{expected_total} (fixture declares expectException; not counted as errors)",
+    )
+    let expected_limit = 20
+    let expected_shown = if expected_total < expected_limit {
+      expected_total
+    } else {
+      expected_limit
+    }
+    let mut k = 0
+    while k < expected_shown {
+      println(summary.expected[k])
+      k = k + 1
+    }
+    if expected_total > expected_limit {
+      println("... and \{expected_total - expected_limit} more expected")
+    }
   }
 }

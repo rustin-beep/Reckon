@@ -117,6 +117,9 @@ pub impl Show for Indexes with fn to_string(self) -> String {
 }
 
 ///|
+pub extend Indexes with Show::{to_string, output}
+
+///|
 /// 一个 access list 元组：地址 + 存储键列表。
 #derive(Debug)
 pub(all) struct AccessTuple {

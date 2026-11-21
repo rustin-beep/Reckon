@@ -261,6 +261,15 @@ fn parse_fixture(name : String, root : Json) -> Fixture raise FixtureError {
 }
 
 ///|
+
+///|
+/// `env`。
+///
+/// `currentRandom` 与 `currentExcessBlobGas` 允许缺失，缺省为零：前者是 merge 之后
+/// 才有的字段（pre-merge fork 只有 `currentDifficulty`），后者是 Cancun 才引入的。
+/// 这两个字段缺失时补零值可以让老 fork 的 fixture 也能加载，而不是整份 parse 失败
+/// ——B06 只跑 Cancun/Prague，但 B09 扫全 corpus 时会碰到 pre-merge 文件。
+/// 其余六个字段（coinbase/gasLimit/number/timestamp/difficulty/baseFee）仍然必需。
 fn parse_env(
   obj : Map[String, Json],
   name : String,
@@ -284,11 +293,7 @@ fn parse_env(
       path,
       "currentTimestamp",
     ),
-    random: as_hash32(
-      field_of(env, path, "currentRandom"),
-      path,
-      "currentRandom",
-    ),
+    random: parse_env_hash32_or_zero(env, path, "currentRandom"),
     difficulty: as_quantity(
       field_of(env, path, "currentDifficulty"),
       path,
@@ -299,11 +304,31 @@ fn parse_env(
       path,
       "currentBaseFee",
     ),
-    excess_blob_gas: as_u64(
-      field_of(env, path, "currentExcessBlobGas"),
-      path,
-      "currentExcessBlobGas",
-    ),
+    excess_blob_gas: parse_env_u64_or_zero(env, path, "currentExcessBlobGas"),
+  }
+}
+
+///|
+fn parse_env_hash32_or_zero(
+  env : Map[String, Json],
+  path : String,
+  field : String,
+) -> @types.Hash32 raise FixtureError {
+  match optional_field(env, field) {
+    None => @types.Hash32::zero()
+    Some(value) => as_hash32(value, path, field)
+  }
+}
+
+///|
+fn parse_env_u64_or_zero(
+  env : Map[String, Json],
+  path : String,
+  field : String,
+) -> UInt64 raise FixtureError {
+  match optional_field(env, field) {
+    None => 0UL
+    Some(value) => as_u64(value, path, field)
   }
 }
 

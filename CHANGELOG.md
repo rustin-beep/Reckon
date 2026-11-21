@@ -50,6 +50,49 @@
   `moon fmt` / `moon info` 漂移检查；wasm-gc / js / native 三后端测试；
   `moon check --deny-warn`，warning 即失败。
 
+### 修复（B06 审阅）
+
+- **`expectException` 的豁免口径统一**（P2）：此前只有「签名不可恢复」这一条分支
+  会把 case 归入 `expected_invalid`，decode 失败、resign 不一致、字段不符仍然计
+  `error_count`，于是 invalid fixture 一多，CLI 退出码恒为 1、`is_clean` 失去判据。
+  现在 `has_expectation` 在 `run_case` 开头取一次，decode / fields / recover / resign
+  四类失败在 fixture 声明异常时一律计入新的 `expected_invalid` 与 `expected` 明细
+  （保留原 class 标签），不再动 `error_count` 与 `resign_mismatch`。`sender` 不一致
+  不豁免——那是 fixture 自身矛盾（`secretKey` 推不出 `sender`），与「这笔交易该被
+  拒绝」无关。探针复验：high-s + `expectException` 由 `errors=2 / exit 1` 变为
+  `expected=1 / errors=0 / exit 0`；legacy `v=29` + `expectException` 同理由
+  `errors=1` 变 `exit 0`；同一份坏字节去掉 `expectException` 仍是 `exit 1`。
+- **删掉 `tx.chainId == config.chainid` 这条断言**（P3）：EEST 的 `transaction` 没有
+  `chainId` 字段，这不是「JSON 向量 vs 解码字段」的核对，而是「交易是否属于本链」的
+  consensus 判定（C12）。`test_valid_tx_invalid_chain_id` 这类 fixture 刻意用别的
+  chainId 签名且交易合法，放在 B06 会误报。
+- **单个 case 展开失败不再中止整批**（P3）：`indexes` 越界、`accessLists` 条数不符
+  原先直接冒到 `run_document` 让 CLI `exit 2`，与「单个 case 失败落 errors」的口径
+  矛盾。现在 `expand_case` 的失败被收进 `class=expand` 错误行，`cases` 仍按 entry 数
+  计数，同批其余 case 继续跑。
+- **RLP 整数拒绝单字节 `0x00`**（P3）：原条件 `length > 1 && b[0] == 0` 放过了
+  「零编码成单字节 0x00」，geth 的 `ErrCanonInt` 会拒。叠加 `encode_with` 保留原始
+  `v`/`yParity` 条目，一个把 `yParity` 编成 `0x00` 的 typed tx 能「逐字节一致」通过，
+  属假阴性。现改为 `length > 0 && b[0] == 0`，并补一条以 `nonce` 为载体的测试。
+- **`env` 的 `currentRandom` / `currentExcessBlobGas` 改为可选**（P3）：两者分别是
+  merge 与 Cancun 才引入的字段，pre-merge fixture 没有；缺失时补零值而不是让整份
+  文档 parse 失败（B09 扫全 corpus 会碰到）。其余六个 env 字段仍必需。
+- `ResignOutcome::Mismatch` 的 `expected`/`actual` 改名为 `reencoded`/`original`
+  （原先「expected 其实是重算值」是反读）；同时删掉从未被构造的
+  `ResignOutcome::Skipped` / `ExpectedInvalid` 两个变体——「有没有 txbytes」由
+  `run_case` 提前分流，「预期无效」上移到 `Summary`。
+
+### 修复（CI）
+
+- **CI 从 run 3 起连续红，根因是干净检出没有 registry 索引**：`moon check` 在依赖
+  解析阶段直接失败——`Failed to resolve registry dependency moonbitlang/x … module
+  was not found in the registry`，耗时 0 秒、exit 255，看起来像命令本身坏掉。
+  用 pin 版本的二进制在干净检出上复现：加一步 `moon update` 即恢复。CI 已在 check
+  之前插入该步骤。
+- 工具链 pin 从 `0.10.21+06da1ed44` 升到 `0.10.22+124d61d05`（driver/runner
+  `0.1.20261119`）。`moon fmt` 的输出跨版本会漂移，CI 与本地必须同版本，否则
+  「格式与接口漂移」那一步会拿两个版本互相打架。
+
 ### 修复（B05 审阅）
 
 - `secp_verify` 的两条 `false` 分支此前零覆盖（把返回值改成 `true` 后测试仍全绿）：
@@ -93,8 +136,8 @@
 ### 验证
 
 - `moon check --target all --deny-warn`：0 error / 0 warning。
-- 三后端 **105/105**：`moon test --target wasm-gc` / `--target js` / `--target native`
-  全部直接跑。原 61 条无回归，B06 新增 44 条。
+- 三后端 **112/112**：`moon test --target wasm-gc` / `--target js` / `--target native`
+  全部直接跑。原 61 条无回归，B06 累计新增 51 条（首轮 44 + 审阅修复 7）。
 - 从索引物化的干净检出可构建并通过同一套测试。
 - keccak256：13 组基础向量 + 31 组块边界/多块向量（pycryptodome 独立生成，
   覆盖 135/136/137、271/272/273、407/408/409、543/544/545）。
@@ -118,7 +161,7 @@
   `eip4844_blobs/test_blob_gas_subtraction_tx.json` 128 case（type3，非空 accessList）、
   `static/state_tests/stCreateTest/CreateOOGFromEOARefunds.json` 24 case（legacy，
   `to=""` 创建）；合计 158 case。
-- B06 测试（新增 44 条）：4 组真实 `txbytes`（legacy/1/2/3）的 `tx hash`、
+- B06 测试：4 组真实 `txbytes`（legacy/1/2/3）的 `tx hash`、
   `signing hash`、`chainId`、`yParity`、`r`、`s` 全部由独立 Python oracle
   （pycryptodome keccak + 手写 RLP + 手写 RFC 6979）复算后写死并逐条断言；
   envelope/截断/尾随/字段数/非规范整数/`to` 长度/blob hash 长度/legacy `v` 各 1 组反例；

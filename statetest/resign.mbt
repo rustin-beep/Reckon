@@ -5,21 +5,23 @@
 //   2. `Signature(r||s, yParity)` + `recover(signing_hash)` 必须恢复出同一个 `sender`；
 //   3. `secp_sign(signing_hash)` 得到的 low-s 签名重新编码后必须与 `txbytes` 逐字节相同。
 //
-// 第 2/3 段对「签名本身无效」的 fixture 会失败，这是预期的：`expectException`
-// 存在时归 `ExpectedInvalid`，不算错误。
+// 本文件不判「这算不算错误」：`expectException` 的豁免统一在 `run.mbt` 处理，
+// 这里只回答「一致 / 不一致 / 签不出来」。
 
 ///|
 /// 重签结果。
+///
+/// 只有能恢复的签名才会走到这里（调用方已用 `recover_sender` 判过），所以没有
+/// 「预期无效」这一类。
 pub(all) enum ResignOutcome {
   /// 重编码后与 `txbytes` 逐字节一致。
   Ok
-  /// 不一致；`offset` 是第一个不同字节的位置，`limit` 是较短一侧的长度。
-  Mismatch(offset~ : Int32, expected~ : String, actual~ : String)
-  /// 没有 `txbytes`，跳过。
-  Skipped
-  /// 签名本身无效，且 fixture 用 `expectException` 声明了这一点。
-  ExpectedInvalid(reason~ : String)
-  /// 签名本身无效，但 fixture 没有声明异常。
+  /// 不一致；`offset` 是第一个不同字节的位置。
+  ///
+  /// `reencoded` 是用 fixture 私钥重签后重编码的字节，`original` 是 txbytes 的原始
+  /// 字节——两者都只截取差异点起的 8 字节。
+  Mismatch(offset~ : Int32, reencoded~ : String, original~ : String)
+  /// 私钥非法，签不出来。
   Invalid(reason~ : String)
 }
 
@@ -27,10 +29,8 @@ pub(all) enum ResignOutcome {
 pub impl Show for ResignOutcome with fn to_string(self) -> String {
   match self {
     Ok => "ok"
-    Mismatch(offset~, expected~, actual~) =>
-      "mismatch at byte \{offset}: expected \{expected}, got \{actual}"
-    Skipped => "skipped (no txbytes)"
-    ExpectedInvalid(reason~) => "expected invalid: \{reason}"
+    Mismatch(offset~, reencoded~, original~) =>
+      "mismatch at byte \{offset}: re-encoded \{reencoded}, txbytes \{original}"
     Invalid(reason~) => "invalid signature: \{reason}"
   }
 }
@@ -112,20 +112,21 @@ pub fn resign(
 
 ///|
 /// 逐字节比较；不一致时给出第一个差异位置与两侧的十六进制片段（各 8 字节）。
-fn compare_bytes(
-  expected_bytes : BytesView,
-  actual_bytes : BytesView,
-) -> ResignOutcome {
-  let n = expected_bytes.length()
-  let m = actual_bytes.length()
+///
+/// 参数命名按语义：`reencoded` 是用 fixture 私钥重签后重编码的字节，`original` 是
+/// txbytes 的原始字节。比较结果里也沿用这一对名字，避免出现「expected 其实是重算值」
+/// 这类反读。
+fn compare_bytes(reencoded : BytesView, original : BytesView) -> ResignOutcome {
+  let n = reencoded.length()
+  let m = original.length()
   let limit = if n < m { n } else { m }
   let mut i = 0
   while i < limit {
-    if expected_bytes[i] != actual_bytes[i] {
+    if reencoded[i] != original[i] {
       return ResignOutcome::Mismatch(
         offset=i,
-        expected=fragment_hex(expected_bytes, i),
-        actual=fragment_hex(actual_bytes, i),
+        reencoded=fragment_hex(reencoded, i),
+        original=fragment_hex(original, i),
       )
     }
     i = i + 1
@@ -136,8 +137,8 @@ fn compare_bytes(
     // 前缀一致但长度不同：差异从较短一侧的末尾开始。
     ResignOutcome::Mismatch(
       offset=limit,
-      expected=fragment_hex(expected_bytes, limit),
-      actual=fragment_hex(actual_bytes, limit),
+      reencoded=fragment_hex(reencoded, limit),
+      original=fragment_hex(original, limit),
     )
   }
 }
@@ -161,11 +162,12 @@ fn fragment_hex(data : BytesView, start : Int32) -> String {
 ///
 /// 只比「两边都有明确值」的字段：legacy pre-EIP-155 没有 `chainId`，就不要求
 /// 它与 `config.chainid` 相等；`accessLists` 字段缺失时也不比。
-pub fn check_fields(
-  case : Case,
-  tx : DecodedTx,
-  config_chain_id : @types.U256,
-) -> Array[String] {
+///
+/// **不比 `chainId` 与 `config.chainid`**：EEST 的 `transaction` 没有 `chainId` 字段
+/// （chainId 只在 `config` 里），所以这不是「JSON 向量 vs 解码字段」的核对，而是
+/// 「交易是否属于本链」的 consensus 判定——`test_valid_tx_invalid_chain_id` 这类
+/// fixture 的交易刻意用别的 chainId 签名且仍然合法，放在这里会误报。该判定属 C12。
+pub fn check_fields(case : Case, tx : DecodedTx) -> Array[String] {
   let diffs : Array[String] = []
   if case.nonce != tx.nonce {
     diffs.push("nonce: json=\{case.nonce} tx=\{tx.nonce}")
@@ -225,13 +227,6 @@ pub fn check_fields(
   }
   if !same_hash_list(case.blob_versioned_hashes, tx.blob_versioned_hashes) {
     diffs.push("blobVersionedHashes differ")
-  }
-  match tx.chain_id {
-    Some(chain_id) =>
-      if chain_id != config_chain_id {
-        diffs.push("chainId: tx=\{chain_id} config=\{config_chain_id}")
-      }
-    None => ()
   }
   diffs
 }

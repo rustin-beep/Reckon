@@ -11,7 +11,7 @@ import {
 // Values
 pub fn address_from_secret_key(@types.U256) -> @types.Address?
 
-pub fn check_fields(Case, DecodedTx, @types.U256) -> Array[String]
+pub fn check_fields(Case, DecodedTx) -> Array[String]
 
 pub fn decode_tx(BytesView) -> DecodedTx raise TxError
 
@@ -167,6 +167,8 @@ pub(all) struct Indexes {
   gas : Int32
   value : Int32
 }
+pub fn Indexes::output(Self, &Logger) -> Unit
+pub fn Indexes::to_string(Self) -> String
 pub impl Show for Indexes
 
 #derive(@debug.Debug)
@@ -182,9 +184,7 @@ pub(all) struct PostEntry {
 
 pub(all) enum ResignOutcome {
   Ok
-  Mismatch(offset~ : Int32, expected~ : String, actual~ : String)
-  Skipped
-  ExpectedInvalid(reason~ : String)
+  Mismatch(offset~ : Int32, reencoded~ : String, original~ : String)
   Invalid(reason~ : String)
 }
 pub fn ResignOutcome::output(Self, &Logger) -> Unit
@@ -204,11 +204,12 @@ pub(all) struct Summary {
   resign_ok : Int32
   resign_mismatch : Int32
   resign_skipped : Int32
-  resign_expected_invalid : Int32
+  expected_invalid : Int32
   sender_ok : Int32
   sender_mismatch : Int32
   error_count : Int32
   errors : Array[String]
+  expected : Array[String]
 }
 pub fn Summary::is_clean(Self) -> Bool
 pub fn Summary::new() -> Self

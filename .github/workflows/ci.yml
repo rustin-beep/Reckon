@@ -7,9 +7,13 @@ on:
 
 env:
   # 工具链版本钉死：必须带构建哈希，因为 CDN 只对完整的 key 提供
-  # `binaries/<version>/` 与 `cores/core-<version>.*`（裸 `0.10.21` 返回 403）。
+  # `binaries/<version>/` 与 `cores/core-<version>.*`（裸 `0.10.22` 返回 403）。
   # 安装脚本会把 `+` 转义成 `%2B`。
-  MOONBIT_VERSION: "0.10.21+06da1ed44"
+  #
+  # 2026-11-21 从 0.10.21+06da1ed44 升到这里：本地开发工具链已是 0.10.22，
+  # 而 `moon fmt` 的输出跨版本会漂移，CI 与本地必须同版本，否则「格式与接口漂移」
+  # 那一步会拿两个版本互相打架。
+  MOONBIT_VERSION: "0.10.22+124d61d05"
 
 jobs:
   # R11 闸门：只允许 import moonbitlang/* 与 moonbit-community/*。
@@ -42,6 +46,14 @@ jobs:
 
       - name: 工具链版本
         run: moon version --all
+
+      # 干净检出没有 registry 索引：`moon check` 会在依赖解析阶段直接失败
+      # （`Failed to resolve registry dependency moonbitlang/x ... module was not
+      # found in the registry`），耗时 0 秒、exit 255——看起来像「命令本身报错」。
+      # 2026-11-21 用 pin 版本的二进制在干净检出上复现：加这一步即恢复。
+      # 装依赖是 check 的前置条件，不能指望 check 顺手去做。
+      - name: 更新 registry 索引
+        run: moon update
 
       - name: 类型检查（全部后端，warning 即失败）
         run: moon check --target all --deny-warn

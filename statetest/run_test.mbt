@@ -51,7 +51,7 @@ test "run_document counts a clean Cancun case" {
   assert_eq(summary.resign_ok, 1)
   assert_eq(summary.resign_mismatch, 0)
   assert_eq(summary.resign_skipped, 0)
-  assert_eq(summary.resign_expected_invalid, 0)
+  assert_eq(summary.expected_invalid, 0)
   assert_eq(summary.sender_ok, 1)
   assert_eq(summary.sender_mismatch, 0)
   assert_eq(summary.error_count, 0)
@@ -131,24 +131,23 @@ test "run_document reports unsupported type 4" {
 }
 
 ///|
-test "run_document reports indexes out of range" {
+test "run_document records an indexes-out-of-range case as an error" {
+  // 展开失败不该把整批带下去：记一条 class=expand 错误，其余 case 继续。
   let doc = with_change(
     old="\"indexes\": {\"data\": 0, \"gas\": 0, \"value\": 0}",
     new="\"indexes\": {\"data\": 3, \"gas\": 0, \"value\": 0}",
   )
-  match run_error(doc, "Cancun") {
-    Some(@statetest.IndexOutOfRange(field~, value~, limit~, ..)) => {
-      assert_eq(field, "indexes.data")
-      assert_eq(value, 3)
-      assert_eq(limit, 1)
-    }
-    Some(other) => abort("expected IndexOutOfRange, got \{other.to_string()}")
-    None => abort("expected IndexOutOfRange, got Ok")
-  }
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  assert_eq(summary.error_count, 1)
+  assert_true(has_error(summary, "class=expand"))
+  assert_true(has_error(summary, "indexes.data"))
+  assert_true(has_error(summary, "limit 1"))
+  assert_eq(summary.is_clean(), false)
 }
 
 ///|
-test "run_document reports access list arity mismatch" {
+test "run_document records access list arity mismatch as an error" {
   // type2 模板 + 两条 accessLists，但 data 只有一条。
   let with_fees = with_change(
     old="\"gasPrice\": \"0x0a\",",
@@ -158,14 +157,11 @@ test "run_document reports access list arity mismatch" {
     old="\"data\": [\"0x\"],",
     new="\"data\": [\"0x\"],\n  \"accessLists\": [[], []],",
   )
-  match run_error(doc, "Cancun") {
-    Some(@statetest.AccessListArity(lists~, inputs~, ..)) => {
-      assert_eq(lists, 2)
-      assert_eq(inputs, 1)
-    }
-    Some(other) => abort("expected AccessListArity, got \{other.to_string()}")
-    None => abort("expected AccessListArity, got Ok")
-  }
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  assert_eq(summary.error_count, 1)
+  assert_true(has_error(summary, "class=expand"))
+  assert_true(has_error(summary, "accessLists"))
 }
 
 ///|
@@ -235,4 +231,89 @@ test "summary of 128 type3 cases stays clean" {
   assert_eq(summary.resign_skipped, 8)
   assert_eq(summary.resign_ok, 1)
   assert_eq(summary.error_count, 0)
+}
+
+///|
+/// 在 `base_doc()` 里给 post entry 插入一条 `expectException`。
+fn with_expectation(doc : String, value : String) -> String {
+  doc.replace_all(
+    old="\"txbytes\":",
+    new="\"expectException\": \"" + value + "\",\n      \"txbytes\":",
+  )
+}
+
+///|
+/// 把 legacy 向量换成 high-s + yParity 翻转的版本。
+///
+/// 这组字节由独立 Python oracle 生成（s -> n-s，legacy v 37 -> 38）：
+/// `recover` 仍能还原出 fixture 的 sender，但用 low-s 重签再编码必然对不上，
+/// 所以它是「resign 不一致而 sender 正常」的最小构造。
+let high_s_txbytes : String = "f860800a834c4b40941ad41edb9130201ba8476168bcbf9bafe279f89d808026a049c30c1716544ca6c1960a201ca2c2e6f829510cbe85a663508c3b8499a318faa0ccc9a7d4a3066462aa7ab6d821325805df93b5e346fdb239fb13c20c1d953881"
+
+///|
+let low_s_txbytes : String = "f860800a834c4b40941ad41edb9130201ba8476168bcbf9bafe279f89d808025a049c30c1716544ca6c1960a201ca2c2e6f829510cbe85a663508c3b8499a318faa03336582b5cf99b9d55854927decda7f8db1b2703684aee01c4be9c80b2a108c0"
+
+///|
+test "run_document treats a high-s resign mismatch as expected when declared" {
+  let doc = with_expectation(
+    with_change(old=low_s_txbytes, new=high_s_txbytes),
+    "TransactionException.INVALID_SIGNATURE",
+  )
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  // recover 仍成功，sender 一致——所以这确实是「只有签名层面对不上」的 case。
+  assert_eq(summary.sender_ok, 1)
+  assert_eq(summary.sender_mismatch, 0)
+  assert_eq(summary.expected_invalid, 1)
+  assert_eq(summary.resign_mismatch, 0)
+  assert_eq(summary.error_count, 0)
+  assert_eq(summary.is_clean(), true)
+  assert_eq(summary.expected.length(), 1)
+  assert_true(summary.expected[0].contains("class=resign"))
+}
+
+///|
+test "run_document treats an invalid legacy v as expected when declared" {
+  // v = 37 -> 29：既不是 27/28 也不是 >= 35，decode 阶段就拒绝。
+  let invalid_v = low_s_txbytes.replace_all(old="808025a0", new="80801da0")
+  let doc = with_expectation(
+    with_change(old=low_s_txbytes, new=invalid_v),
+    "TransactionException.INVALID_SIGNATURE_VRS",
+  )
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  assert_eq(summary.expected_invalid, 1)
+  assert_eq(summary.error_count, 0)
+  assert_eq(summary.resign_ok, 0)
+  assert_eq(summary.is_clean(), true)
+  assert_eq(summary.expected.length(), 1)
+  assert_true(summary.expected[0].contains("class=decode"))
+  assert_true(summary.expected[0].contains("legacy tx v="))
+}
+
+///|
+test "run_document does not compare tx chainId with config chainId" {
+  // EEST 的 transaction 没有 chainId 字段；`tx.chainId != config.chainid` 是
+  // consensus 判定（C12），不是 JSON 向量核对。把 config 改成 0x02 不应报错。
+  let doc = with_change(
+    old="\"chainid\": \"0x01\"",
+    new="\"chainid\": \"0x02\"",
+  )
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  assert_eq(summary.error_count, 0)
+  assert_eq(summary.resign_ok, 1)
+  assert_eq(summary.is_clean(), true)
+}
+
+///|
+test "run_document without expectException still fails on an invalid v" {
+  // 同一份坏字节，去掉 expectException 就必须是错误（对照组）。
+  let invalid_v = low_s_txbytes.replace_all(old="808025a0", new="80801da0")
+  let doc = with_change(old=low_s_txbytes, new=invalid_v)
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.error_count, 1)
+  assert_eq(summary.expected_invalid, 0)
+  assert_true(has_error(summary, "class=decode"))
+  assert_eq(summary.is_clean(), false)
 }

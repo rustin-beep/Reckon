@@ -316,11 +316,11 @@ test "decode_tx rejects truncation and trailing bytes" {
 test "decode_tx rejects wrong field counts" {
   // legacy 少一个字段（8 个）。
   let eight : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("25")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -343,11 +343,11 @@ test "decode_tx rejects wrong field counts" {
 test "decode_tx rejects non-canonical integers" {
   // gasPrice 写成 0x00 0x0a（前导零）。
   let fields : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("000a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("25")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -368,11 +368,11 @@ test "decode_tx rejects non-canonical integers" {
 test "decode_tx rejects bad to and bad blob hash" {
   // to 是 19 字节。
   let fields : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(19, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("25")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -390,12 +390,12 @@ test "decode_tx rejects bad to and bad blob hash" {
   // type3 的 blob hash 是 31 字节。
   let blob_fields : Array[@rlp.Item] = [
     @rlp.Item::Str(bytes_from_hex("01")),
-    @rlp.Item::Str(bytes_from_hex("00")),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0e")),
     @rlp.Item::Str(bytes_from_hex("07a120")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::List([]),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -426,11 +426,11 @@ test "decode_tx rejects bad to and bad blob hash" {
 test "decode_tx legacy v without EIP-155" {
   // v = 27 -> 无 chainId，yParity = 0；signing payload 是 6 个字段。
   let fields : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("1b")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -443,11 +443,11 @@ test "decode_tx legacy v without EIP-155" {
   let expected = @crypto.keccak256(
     @rlp.encode(
       @rlp.Item::List([
-        @rlp.Item::Str(bytes_from_hex("00")),
+        @rlp.Item::Str(Bytes::make(0, b'\x00')),
         @rlp.Item::Str(bytes_from_hex("0a")),
         @rlp.Item::Str(bytes_from_hex("4c4b40")),
         @rlp.Item::Str(Bytes::make(20, b'\x11')),
-        @rlp.Item::Str(bytes_from_hex("00")),
+        @rlp.Item::Str(Bytes::make(0, b'\x00')),
         @rlp.Item::Str(Bytes::make(0, b'\x00')),
       ]),
     )[:],
@@ -455,11 +455,11 @@ test "decode_tx legacy v without EIP-155" {
   assert_eq(tx.signing_hash.to_hex(), expected.to_hex())
   // v = 28 -> yParity = 1。
   let fields28 : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("1c")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -470,11 +470,11 @@ test "decode_tx legacy v without EIP-155" {
   assert_eq(tx28.signing_hash.to_hex(), expected.to_hex())
   // v = 29 既不是 27/28 也不是 >= 35。
   let fields29 : Array[@rlp.Item] = [
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("0a")),
     @rlp.Item::Str(bytes_from_hex("4c4b40")),
     @rlp.Item::Str(Bytes::make(20, b'\x11')),
-    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(Bytes::make(0, b'\x00')),
     @rlp.Item::Str(bytes_from_hex("1d")),
     @rlp.Item::Str(bytes_from_hex("01")),
@@ -515,4 +515,30 @@ test "decode_tx random bytes never abort" {
   }
   // 随机 9 字段 legacy 撞上合法结构的概率极低，但不为零；这里只记录，不设阈值。
   ignore(accepted)
+}
+
+///|
+test "decode_tx rejects a single-byte zero integer" {
+  // RLP 整数的最小编码要求「零」编码成空串。单字节 0x00 是非规范形式，
+  // geth 的 ErrCanonInt 同样拒绝；这里用 nonce 构造，断言错误落在具体字段上。
+  let fields : Array[@rlp.Item] = [
+    @rlp.Item::Str(bytes_from_hex("00")),
+    @rlp.Item::Str(bytes_from_hex("0a")),
+    @rlp.Item::Str(bytes_from_hex("4c4b40")),
+    @rlp.Item::Str(Bytes::make(20, b'\x11')),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
+    @rlp.Item::Str(Bytes::make(0, b'\x00')),
+    @rlp.Item::Str(bytes_from_hex("25")),
+    @rlp.Item::Str(bytes_from_hex("01")),
+    @rlp.Item::Str(bytes_from_hex("02")),
+  ]
+  let raw = @rlp.encode(@rlp.Item::List(fields))
+  match
+    capture_tx_error(fn() -> Unit raise @statetest.TxError {
+      ignore(@statetest.decode_tx(raw[:]))
+    }) {
+    Some(@statetest.NonCanonicalInt(field~)) => assert_eq(field, "nonce")
+    Some(other) => abort("expected NonCanonicalInt, got \{other.to_string()}")
+    None => abort("expected NonCanonicalInt, got Ok")
+  }
 }

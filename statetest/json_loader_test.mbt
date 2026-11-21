@@ -476,3 +476,52 @@ test "loader rejects 100 random non-JSON strings" {
     }
   }
 }
+
+///|
+test "loader accepts odd-length quantities" {
+  // 以太坊数量字段允许奇数位（`0x1` 与 `0x01` 同义）。
+  let doc = with_change(old="\"chainid\": \"0x01\"", new="\"chainid\": \"0x1\"")
+  let fixtures = @statetest.parse_document(doc)
+  assert_eq(
+    fixtures[0].chain_id.to_hex(),
+    "0000000000000000000000000000000000000000000000000000000000000001",
+  )
+  // 值本身大一点也照常：0xabc 是奇数位。
+  let doc2 = with_change(
+    old="\"chainid\": \"0x01\"",
+    new="\"chainid\": \"0xabc\"",
+  )
+  let fixtures2 = @statetest.parse_document(doc2)
+  assert_eq(
+    fixtures2[0].chain_id.to_hex(),
+    "0000000000000000000000000000000000000000000000000000000000000abc",
+  )
+}
+
+///|
+test "loader tolerates missing currentRandom and currentExcessBlobGas" {
+  // 这两个字段分别是 merge 与 Cancun 才引入的；pre-merge fixture 没有它们。
+  // 缺失时补零值，而不是让整份文档 parse 失败。
+  let without_random = with_change(
+    old="  \"currentRandom\": \"0x0000000000000000000000000000000000000000000000000000000000000000\",\n",
+    new="",
+  )
+  let doc = without_random.replace_all(
+    old="\"currentBaseFee\": \"0x07\",\n  \"currentExcessBlobGas\": \"0x00\"",
+    new="\"currentBaseFee\": \"0x07\"",
+  )
+  let fixtures = @statetest.parse_document(doc)
+  assert_eq(fixtures[0].env.random.to_hex(), @types.Hash32::zero().to_hex())
+  assert_eq(fixtures[0].env.excess_blob_gas, 0UL)
+  // 但其余 env 字段仍然必需：删掉 currentCoinbase 必须报错。
+  let broken = with_change(
+    old="\"currentCoinbase\": \"0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba\",\n",
+    new="",
+  )
+  match expect_parse_error(broken) {
+    Some(@statetest.FieldMissing(field~, ..)) =>
+      assert_eq(field, "currentCoinbase")
+    Some(other) => abort("expected FieldMissing, got \{other.to_string()}")
+    None => abort("expected FieldMissing, got Ok")
+  }
+}

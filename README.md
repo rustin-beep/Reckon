@@ -31,7 +31,7 @@ B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not starte
 | B03 | keccak256 | done：自研，13 组独立向量（含块边界） |
 | B04 | RLP | done：canonical encode/decode + 规范性拒绝 + 随机树往返 |
 | B05 | secp256k1 | done：自研（4×64 limb + 伪梅森归约、Jacobian 点运算、RFC 6979 low-s 签名、malleable recover、地址推导）；native 标量乘 1.45 ms、sign 2.1 ms |
-| B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
+| B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；`expectException` 的 case 归 `expected_invalid`（不计入 errors、不影响退出码，明细保留细分 class）；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
 | B07 | state model v0 | not started |
 | B08 | harness v0 | not started |
 | B09 | corpus/report | not started |
@@ -57,9 +57,12 @@ B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not starte
 
 ## 构建与测试
 
-工具链：moonc **0.10.21**（`moonc v0.10.21+06da1ed44`）、moon driver 0.1.20261117、
-moonrun 0.1.20261117（与 driver 同 commit）。CI pin 在 `.github/workflows/ci.yml` 的 `MOONBIT_VERSION`，必须是**带构建哈希的完整版本**
-（CDN 只认 `0.10.21+06da1ed44` 这种 key，裸 `0.10.21` 返回 403）。
+工具链：moonc **0.10.22**（`moonc v0.10.22+124d61d05`）、moon driver 0.1.20261119、
+moonrun 0.1.20261119（与 driver 同 commit `738607b`）。CI pin 在
+`.github/workflows/ci.yml` 的 `MOONBIT_VERSION`，必须是**带构建哈希的完整版本**
+（CDN 只认 `0.10.22+124d61d05` 这种 key，裸 `0.10.22` 返回 403），且**与本地同版本**——
+`moon fmt` 的输出跨版本会漂移。干净检出要先 `moon update` 拉 registry 索引，
+否则 `moon check` 会在依赖解析阶段直接失败。
 
 ```bash
 moon check --target all --deny-warn   # 全后端，warning 即失败
