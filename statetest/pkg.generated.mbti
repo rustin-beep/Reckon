@@ -1,0 +1,248 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/statetest"
+
+import {
+  "moonbitlang/core/debug",
+  "vitro/reckon/crypto",
+  "vitro/reckon/rlp",
+  "vitro/reckon/types",
+}
+
+// Values
+pub fn address_from_secret_key(@types.U256) -> @types.Address?
+
+pub fn check_fields(Case, DecodedTx, @types.U256) -> Array[String]
+
+pub fn decode_tx(BytesView) -> DecodedTx raise TxError
+
+pub fn describe_secp_error(@crypto.SecpError) -> String
+
+pub fn expand_case(Fixture, String, Array[PostEntry], Int32) -> Case raise FixtureError
+
+pub fn parse_document(String) -> Array[Fixture] raise FixtureError
+
+pub fn recover_sender(DecodedTx) -> @types.Address?
+
+pub fn resign(DecodedTx, BytesView, @types.U256) -> ResignOutcome
+
+pub fn run_document(Array[Fixture], String) -> Summary raise FixtureError
+
+// Errors
+pub suberror FixtureError {
+  JsonParse(message~ : String)
+  FieldMissing(path~ : String, field~ : String)
+  FieldType(path~ : String, field~ : String, expected~ : String)
+  HexInvalid(path~ : String, field~ : String, reason~ : String)
+  LengthInvalid(path~ : String, field~ : String, expected~ : Int32, actual~ : Int32)
+  IntegerTooLarge(path~ : String, field~ : String)
+  IndexOutOfRange(path~ : String, field~ : String, value~ : Int32, limit~ : Int32)
+  AccessListArity(path~ : String, lists~ : Int32, inputs~ : Int32)
+  ForkNotFound(fork~ : String, available~ : Array[String])
+  EmptyDocument
+  DuplicateAccount(path~ : String, address~ : String)
+}
+pub fn FixtureError::output(Self, &Logger) -> Unit
+pub fn FixtureError::to_string(Self) -> String
+pub impl Show for FixtureError
+
+pub suberror TxError {
+  EmptyInput
+  UnknownEnvelope(first~ : Int32)
+  UnsupportedType(type_byte~ : Int32)
+  Rlp(message~ : String)
+  FieldCount(expected~ : Int32, actual~ : Int32)
+  FieldNotStr(field~ : String)
+  FieldNotList(field~ : String)
+  NonCanonicalInt(field~ : String)
+  IntegerTooLarge(field~ : String)
+  BadTo(length~ : Int32)
+  BadAccessList(reason~ : String)
+  BadBlobHash(index~ : Int32, length~ : Int32)
+  BadLegacyV(v~ : @types.U256)
+  BadYParity(v~ : @types.U256)
+}
+pub fn TxError::output(Self, &Logger) -> Unit
+pub fn TxError::to_string(Self) -> String
+pub impl Show for TxError
+
+// Types and methods
+#derive(@debug.Debug)
+pub(all) struct AccessTuple {
+  address : @types.Address
+  storage_keys : Array[@types.Hash32]
+}
+pub fn AccessTuple::same(Self, Self) -> Bool
+
+#derive(@debug.Debug)
+pub(all) struct AccountAlloc {
+  nonce : UInt64
+  balance : @types.U256
+  code : Bytes
+  storage : Array[(@types.U256, @types.U256)]
+}
+
+#derive(@debug.Debug)
+pub(all) struct Alloc {
+  entries : Array[(@types.Address, AccountAlloc)]
+}
+pub fn Alloc::length(Self) -> Int32
+pub fn Alloc::lookup(Self, @types.Address) -> AccountAlloc?
+
+#derive(@debug.Debug)
+pub(all) struct BlockEnv {
+  coinbase : @types.Address
+  gas_limit : UInt64
+  number : UInt64
+  timestamp : UInt64
+  random : @types.Hash32
+  difficulty : @types.U256
+  base_fee : @types.U256
+  excess_blob_gas : UInt64
+}
+
+#derive(@debug.Debug)
+pub(all) struct Case {
+  fixture_name : String
+  fork : String
+  entry_index : Int32
+  indexes : Indexes
+  tx_type : TxType
+  nonce : @types.U256
+  gas_price : @types.U256
+  max_priority_fee_per_gas : @types.U256
+  max_fee_per_gas : @types.U256
+  gas_limit : @types.U256
+  value : @types.U256
+  data : Bytes
+  access_list : Array[AccessTuple]
+  to : @types.Address?
+  max_fee_per_blob_gas : @types.U256
+  blob_versioned_hashes : Array[@types.Hash32]
+  txbytes : Bytes?
+  txbytes_field_present : Bool
+  expect_exception : Array[String]
+}
+
+pub(all) struct DecodedTx {
+  tx_type : TxType
+  chain_id : @types.U256?
+  nonce : @types.U256
+  gas_price : @types.U256?
+  max_priority_fee_per_gas : @types.U256?
+  max_fee_per_gas : @types.U256?
+  gas_limit : @types.U256
+  to : @types.Address?
+  value : @types.U256
+  data : Bytes
+  access_list : Array[AccessTuple]
+  max_fee_per_blob_gas : @types.U256?
+  blob_versioned_hashes : Array[@types.Hash32]
+  v : @types.U256
+  y_parity : Int32
+  r : @types.U256
+  s : @types.U256
+  tx_hash : @types.Hash32
+  signing_hash : @types.Hash32
+  fields : Array[@rlp.Item]
+}
+pub fn DecodedTx::compute_signing_hash(Self) -> @types.Hash32
+pub fn DecodedTx::encode_with(Self, @types.U256, @types.U256) -> Bytes
+pub fn DecodedTx::unsigned_item(Self) -> @rlp.Item
+
+#derive(@debug.Debug)
+pub(all) struct Fixture {
+  name : String
+  chain_id : @types.U256
+  env : BlockEnv
+  pre : Alloc
+  post : Array[(String, Array[PostEntry])]
+  tx : TxTemplate
+}
+pub fn Fixture::forks(Self) -> Array[String]
+pub fn Fixture::post_for(Self, String) -> Array[PostEntry]?
+
+#derive(@debug.Debug)
+pub(all) struct Indexes {
+  data : Int32
+  gas : Int32
+  value : Int32
+}
+pub impl Show for Indexes
+
+#derive(@debug.Debug)
+pub(all) struct PostEntry {
+  state_hash : @types.Hash32
+  logs_hash : @types.Hash32
+  state : Alloc
+  txbytes : Bytes?
+  txbytes_field_present : Bool
+  indexes : Indexes
+  expect_exception : Array[String]
+}
+
+pub(all) enum ResignOutcome {
+  Ok
+  Mismatch(offset~ : Int32, expected~ : String, actual~ : String)
+  Skipped
+  ExpectedInvalid(reason~ : String)
+  Invalid(reason~ : String)
+}
+pub fn ResignOutcome::output(Self, &Logger) -> Unit
+pub fn ResignOutcome::to_string(Self) -> String
+pub impl Show for ResignOutcome
+
+#derive(@debug.Debug)
+pub(all) struct Summary {
+  cases : Int32
+  legacy : Int32
+  type1 : Int32
+  type2 : Int32
+  type3 : Int32
+  unsupported : Int32
+  txbytes_present : Int32
+  txbytes_missing : Int32
+  resign_ok : Int32
+  resign_mismatch : Int32
+  resign_skipped : Int32
+  resign_expected_invalid : Int32
+  sender_ok : Int32
+  sender_mismatch : Int32
+  error_count : Int32
+  errors : Array[String]
+}
+pub fn Summary::is_clean(Self) -> Bool
+pub fn Summary::new() -> Self
+
+#derive(@debug.Debug)
+pub(all) struct TxTemplate {
+  tx_type : TxType
+  nonce : @types.U256
+  gas_price : @types.U256
+  max_priority_fee_per_gas : @types.U256
+  max_fee_per_gas : @types.U256
+  gas_limits : Array[@types.U256]
+  to : @types.Address?
+  values : Array[@types.U256]
+  datas : Array[Bytes]
+  access_lists : Array[Array[AccessTuple]]?
+  max_fee_per_blob_gas : @types.U256
+  blob_versioned_hashes : Array[@types.Hash32]
+  sender : @types.Address
+  secret_key : @types.U256
+}
+
+#derive(@debug.Debug)
+pub(all) enum TxType {
+  Legacy
+  Type1
+  Type2
+  Type3
+  Type4
+}
+pub fn TxType::output(Self, &Logger) -> Unit
+pub fn TxType::to_string(Self) -> String
+pub impl Show for TxType
+
+// Type aliases
+
+// Traits

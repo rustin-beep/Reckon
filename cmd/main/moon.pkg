@@ -1,5 +1,7 @@
 import {
   "moonbitlang/core/env",
+  "moonbitlang/x/fs",
+  "vitro/reckon/statetest",
 }
 
 pkgtype(kind: "executable")

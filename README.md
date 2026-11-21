@@ -2,8 +2,8 @@
 
 Embeddable EVM execution core in MoonBit.
 
-Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP and
-B05 secp256k1 landed; the interpreter (P1) has not started.
+Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP,
+B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not started.
 
 ## Layout
 
@@ -15,6 +15,7 @@ B05 secp256k1 landed; the interpreter (P1) has not started.
 | [`types/`](types) | `U256` (4 x UInt64 limbs)、`Address`、`Hash32`、hex |
 | [`crypto/`](crypto) | `keccak256`、`secp256k1`（域/群、ECDSA、RFC 6979、recover、地址推导） |
 | [`rlp/`](rlp) | canonical RLP encode/decode |
+| [`statetest/`](statetest) | EEST state test 解析：fixture 模型、tx 0/1/2/3 解码、`txbytes` 重签校验 |
 | [`cmd/main/`](cmd/main) | `reckon` CLI skeleton |
 | `probes/` | 本地研究探针，**不入库**（第三方源码与绝对路径，来源见本地 `probes/README.md`） |
 | [`fixtures/`](fixtures/eest) | EEST v5.4.0 stable 语料（tarball + 解包元数据） |
@@ -30,10 +31,13 @@ B05 secp256k1 landed; the interpreter (P1) has not started.
 | B03 | keccak256 | done：自研，13 组独立向量（含块边界） |
 | B04 | RLP | done：canonical encode/decode + 规范性拒绝 + 随机树往返 |
 | B05 | secp256k1 | done：自研（4×64 limb + 伪梅森归约、Jacobian 点运算、RFC 6979 low-s 签名、malleable recover、地址推导）；native 标量乘 1.45 ms、sign 2.1 ms |
-| B06 | fixture loader | not started |
+| B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
 | B07 | state model v0 | not started |
 | B08 | harness v0 | not started |
 | B09 | corpus/report | not started |
+
+> **G0 仍未达成**：B06 只做到「fixture 加载 + tx 0/1/2/3 解码 + `txbytes` 重签校验」，
+> 账户级 state diff 与 pass/fail 判定要等 B07（state model）与 B08（harness）。
 
 ### probes
 

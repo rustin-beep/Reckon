@@ -24,7 +24,27 @@
   `Hash32::from_fixed_unchecked` 同风格）。
 - `rlp`：规范 RLP 编解码，包含非规范形式的拒绝（单字节 <0x80 包裹、短载荷用长格式、
   长度前导零、尾随字节、截断）。
-- `cmd/main`：`reckon` CLI 骨架，`--version` / `--help` 可用，四个子命令占位。
+- `statetest`：EEST state test 的强类型模型与**严格** JSON loader（`config` 只取
+  `chainid`，其余四段 env/pre/post/transaction 全解析）。未知字段忽略，必需字段缺失、
+  类型不符、定宽字段长度错、十六进制非法、数量字段溢出 64 位、`indexes` 非整数全部
+  按 `FixtureError` 分类并带 JSON 路径；重复键与超过 64 层的嵌套由 `@json.parse` 拒绝。
+  account `storage` 按 EEST 实际格式（**数量**，如 `"0x01"`/`"0xff"`）解析成 `U256`，
+  不是 32 字节哈希——这一点与任务书初稿的描述不同，以抽样实测为准。
+- `statetest`：`txbytes` 解码（legacy 含 EIP-155、type 1/2/3），输出交易字段、
+  `tx hash`、`signing hash`（pre-155 6 字段 / EIP-155 追加 `chainId,0,0` / typed
+  `type||rlp(unsigned)`）、`chainId`、`yParity`；`r`/`s` 原样保存不在这里做范围判定。
+  type 4（EIP-7702）识别但只返回 `UnsupportedType(4)`，留给 P02。
+- `statetest`：`txbytes` 重签校验——`secretKey → 地址`、`Signature + recover → 地址`
+  都必须等于 fixture 的 `sender`，再用 `secp_sign` 的 low-s 签名重编码并与原始字节
+  **逐字节**比对（不一致时报第一个差异字节的 offset 与两侧 hex 片段）。同时核对
+  `indexes` 选中的 JSON 向量与解码字段（nonce/fees/gasLimit/value/data/to/accessList/
+  maxFeePerBlobGas/blobVersionedHashes/chainId）。
+- `cmd/main`：`reckon statetest <fixture> [--fork <name>]`（默认 Cancun），输出
+  `cases` / `tx_types` / `txbytes` / `resign` / `sender` / `errors` 计数与分类错误行
+  （最多 50 行）；退出码 0 = 干净、1 = 有 mismatch 或解码错误或 unsupported、
+  2 = 用法或 IO 错误。文件读取只在 `cmd/main`，`statetest` 库不 import `fs`。
+- `cmd/main`：`reckon` CLI 骨架，`--version` / `--help` 可用；`statetest` 已可用，
+  `run` / `trace` / `bench` 仍是占位。
 - `tools/depcheck`：Go 实现的依赖白名单闸（PLAN R11），带表驱动单元测试。
 - CI：官方安装脚本 + 版本钉（`0.10.21+06da1ed44`）；依赖闸独立 job；
   `moon fmt` / `moon info` 漂移检查；wasm-gc / js / native 三后端测试；
@@ -73,8 +93,8 @@
 ### 验证
 
 - `moon check --target all --deny-warn`：0 error / 0 warning。
-- 三后端 **61/61**：`moon test --target wasm-gc` / `--target js` / `--target native`
-  全部直接跑。原 32 条无回归，B05 新增 29 条。
+- 三后端 **105/105**：`moon test --target wasm-gc` / `--target js` / `--target native`
+  全部直接跑。原 61 条无回归，B06 新增 44 条。
 - 从索引物化的干净检出可构建并通过同一套测试。
 - keccak256：13 组基础向量 + 31 组块边界/多块向量（pycryptodome 独立生成，
   覆盖 135/136/137、271/272/273、407/408/409、543/544/545）。
@@ -91,3 +111,16 @@
 - B05 性能（native release，中位数）：`fe_mul` 0.16 µs、点倍 3.6 µs、点加 4.4 µs、
   标量乘 1.45 ms、`sign` 2.1 ms、`verify` 4.2 ms、`recover` 4.4 ms；js 标量乘 9.5 ms
   （ADR-3：js 只承诺正确性）。BigInt 探针基线为 3.58 ms/标量乘。
+- B06 真实 fixture（`--fork Cancun`，全部 0 error / 0 mismatch / 0 sender mismatch）：
+  `eip1153_tstore/test_basic_tload_after_store.json` 1 case（legacy）、
+  `eip4844_blobs/test_blobhash_opcode_contexts_tx_types.json` 3 case（legacy/1/2）、
+  `eip4844_blobs/test_invalid_tx_blob_count.json` 2 case（type3，带 `expectException`）、
+  `eip4844_blobs/test_blob_gas_subtraction_tx.json` 128 case（type3，非空 accessList）、
+  `static/state_tests/stCreateTest/CreateOOGFromEOARefunds.json` 24 case（legacy，
+  `to=""` 创建）；合计 158 case。
+- B06 测试（新增 44 条）：4 组真实 `txbytes`（legacy/1/2/3）的 `tx hash`、
+  `signing hash`、`chainId`、`yParity`、`r`、`s` 全部由独立 Python oracle
+  （pycryptodome keccak + 手写 RLP + 手写 RFC 6979）复算后写死并逐条断言；
+  envelope/截断/尾随/字段数/非规范整数/`to` 长度/blob hash 长度/legacy `v` 各 1 组反例；
+  loader 12 类错误各断言具体变体与路径；300 组 LCG 随机字节喂 `decode_tx`、
+  100 组随机非 JSON 字符串喂 loader，只允许 Ok/Err（不 abort）。

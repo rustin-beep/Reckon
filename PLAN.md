@@ -76,7 +76,7 @@ MoonBit 一个模块内的包路径就是目录本身。按真实依赖边界切
 | `precompiles/` | `PrecompileProvider` + 分组实现 | crypto, types | 计划 |
 | `host/` | `Host` trait、BlockEnv/TxEnv、`Inspector`、EIP-3155 trace | types, state | 计划（C08） |
 | `facade/` | `Evm`、`ExecutionResult`、`State` diff、`Spec` revision 表 | 全部 | 计划 |
-| `statetest/` | fixture runner（薄 CLI `cmd/main` 调用） | facade, rlp, crypto | 计划（B06/B08） |
+| `statetest/` | fixture runner（薄 CLI `cmd/main` 调用） | types, rlp, crypto, json | **已落地**（B06：模型 / `indexes` 展开 / tx 0–3 解码 / 重签校验）；执行与 state diff 待 B08 |
 | `bench/` | benchmark runner（evmone-bench 兼容格式） | facade | 计划（X01） |
 | `cmd/main/` | `reckon` CLI 骨架 | core/env | **已落地**（B01） |
 | `tools/depcheck/` | 依赖白名单闸（**Go**，非 MoonBit 包） | — | **已落地** |
