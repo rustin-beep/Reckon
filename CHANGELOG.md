@@ -85,6 +85,95 @@
   LCG 参考模型对拍（整表深拷贝式快照、LIFO 回滚、每步比对 canonical 导出）。
   变异验证：回滚不清零槽 → 2 条红；日志改正序撤销 → 7 条红；diff 忽略仅槽变化 → 2 条红。
 
+### 新增（B08：harness v0）
+
+- `statetest` 新增依赖 `vitro/reckon/state`（方向 `statetest → state → types`，不反向）；
+  `statetest/harness.mbt` 落地 harness v0：
+  - `run_harness(fixtures, fork, execute : (Case, @state.State) -> Unit) -> HarnessSummary`
+    ——每个 case 从 `fixture.pre` 新建一个 `State`（不复用），调用显式执行回调，再与
+    `post[fork][i].state` 比对。执行是**注入的回调**，没有为 v0 造只有一个实现的 trait。
+  - `alloc_entries`（`Alloc` → `Array[AccountEntry]`）与 `canonical_accounts`
+    （`Alloc` → `State::from_accounts(..).accounts()`）：expected 与 actual 走同一条
+    canonical 路径，empty 账户、零槽、排序规则由 `state` 单方面给出，比对器不自带第二套。
+  - `compare_accounts(expected, actual) -> CompareReport`：8 类分类
+    （`missing_account` / `extra_account` / `nonce` / `balance` / `code` /
+    `missing_slot` / `extra_slot` / `slot_value`），两侧先各自排序再归并，输入顺序无关；
+    超长 code 摘要截断到 32 字节并标注总长，不影响计数。
+  - `HarnessSummary`：case 级 `pass` / `fail` / `skipped_expected_invalid` /
+    `skipped_unsupported` / `internal_errors`，字段/槽级 8 个 mismatch 计数，
+    `state_diff=accounts/slots`（所有执行过的 case 的 `State::diff()` 之和），
+    `details`（上限 50 条）+ `details_omitted`（超限条数，计数仍完整）。
+  - skip 口径：`expectException` 非空 → `skipped_expected_invalid`（不执行、不比对，
+    也与「pre == post」无关）；`tx_type == Type4`（EIP-7702）→ `skipped_unsupported`。
+  - `exit_code(tx, harness, strict) -> Int32` 纯函数：tx 流水线不干净 / `internal_errors > 0`
+    → 1；`--strict` 时再要求 `harness.fail == 0`；**默认不因 state fail 变红**（P0 是 stub）。
+- `cmd/main`：`reckon statetest <fixture> [--fork <name>] [--strict]` 先跑 B06 tx 流水线，
+  再跑 harness；新增输出行 `execution=stub (no interpreter; G0 harness only)`、
+  `state_root=not_checked`、`logs=not_checked`、`harness=cases/pass/fail/skip_expected/
+  skip_unsupported/internal_errors`、`state_diff=accounts/slots`、
+  `post_diff=missing_accounts/extra_accounts/nonce/balance/code/missing_slots/extra_slots/
+  slot_values`，以及 `case=… fork=… indexes=… class=…` 明细（最多 50 行，其余只报条数）。
+  `--strict` 进 usage。没有 `--inject-post` 之类的反填开关：生产路径读不到 `post.state`。
+- 测试：新增 22 条（`statetest/harness_test.mbt`），三后端 **191/191**。覆盖
+  canonical 归一（empty 账户/零槽/排序）、重复地址报错、8 类 mismatch 的正负例、
+  输入顺序无关、排序不落在调用方数组上（`Array` 引用语义）、超长 code 截断、no-op executor 的 fail 分类、**fake executor 写 expected
+  → pass**、少写一个字段只剩该类 mismatch、两种 skip 分支、两次运行逐字段一致、
+  单 case 展开失败不影响同批、明细 50 条上限、以及 `exit_code` 的四种组合。
+- 真实 fixture（`/tmp` 解包，不入库）：
+  - `cancun/eip1153_tstore/test_basic_tload_after_store.json`：cases=1 pass=0 fail=1
+    skip=0 internal=0；`post_diff` = missing_accounts:1 / nonce:1 / balance:1 /
+    missing_slots:1 / extra_slots:1；默认 exit 0，`--strict` exit 1。
+  - `cancun/eip4844_blobs/test_invalid_tx_blob_count.json`：cases=2，两个 case 全部
+    `skip_expected`（fixture 声明 `expectException`），`fail=0`、`internal=0`、exit 0。
+  - `static/state_tests/stCreateTest/CreateOOGFromEOARefunds.json`：文件含 48 个 fixture
+    （24 个 `fork_Cancun` + 24 个 `fork_Prague`），`--fork Cancun` 下是 **24 个 case**
+    （Prague 那半边不贡献 Cancun entry），全部跑完不崩：fail=24、internal=0、
+    `post_diff` = missing_accounts:10 / nonce:24 / balance:24 / extra_slots:1，
+    明细 50 条 + 9 条省略；同一命令两次输出逐字节相同。
+  - 口径：真实 family 上 `execution=stub`，`pass` 为 0 是预期结果（执行未实现），
+    不得读成实现缺陷；G0 只判 harness 通路，执行正确性与通过率归 G1。
+
+### 新增（B09：corpus/report）
+
+- `statetest/corpus.mbt`：corpus 层的纯计算（不碰文件系统、不读墙钟）：
+  - `shard_pick(paths, shard, shards)`：按**字典序**排序后取 `i % shards == shard`，
+    同一 `i/n` 在任何机器上切出同一批文件。排序**不用** `String::compare`——它在
+    0.10.22 是长度优先（`"ab".compare("b") == 1`），会把 `static/z.json` 排到
+    `cancun/...` 前面；改用显式逐字符比较 `compare_paths`。
+  - `FileReport::of` / `totals_of` / `CorpusTotals::add`：每文件与合计的计数
+    （cases / pass / fail / skip_expected / skip_unsupported / internal_errors /
+    tx_errors / resign_mismatches / unsupported / txbytes_present / txbytes_missing /
+    expected_invalid）。
+  - `CorpusTotals::exit_code(strict)`：与单文件 `exit_code` 同一套判据（tx 不干净 /
+    internal / `strict` 下的 fail），并有等价性单测钉住，两套判据不许打架。
+  - `report_json(fork, files)`：JSON 报告骨架——`corpus`（tag `tests-v5.4.0` /
+    commit `4f68564` / format `state_test`）、`fork`、`executor`（stub 自述）、
+    `checks`（`execution=not_run` / `state_root=not_checked` / `logs=not_checked`）、
+    每文件计数、`totals`。键序固定、整数不带小数点、同一输入逐字节可复现。
+- `cmd/main`：`reckon statetest <fixture-or-dir> [--fork] [--strict] [--shard <i>/<n>]
+  [--report <path>]`：
+  - 参数是目录时递归收集 `*.json`（排序 + 分片），语料模式输出
+    `files/fork/shard` 头 + 每文件一行 `file=… cases:… pass:… fail:…` + `totals=…`
+    + `report=…`；参数是单文件时保持 B08 的详细输出（明细最多 50 行）。
+    语料模式**只出计数**：全语料的 mismatch 行会淹掉输出，定位靠文件行 + 报告，
+    再对单文件复跑取明细。
+  - 空目录（分片前就没有 `*.json`）→ exit 2；坏 `--shard`（非 `i/n`、`i >= n`）→ exit 2；
+    分片后为空 → `files:0` + exit 0（合法结果，不当作错误）。
+  - 退出码统一走 `CorpusTotals::exit_code`，`cmd/main` 里不再散落条件。
+- 测试：新增 13 条（`statetest/corpus_test.mbt`），三后端 **204/204**。覆盖分片
+  不重不漏 / 越界为空 / 不改入参、**字典序而非长度优先序**（防回归的那颗钉子）、
+  合计逐项相加、`FileReport` 与两侧 `cases` 一致、合计版退出码与单文件 `exit_code`
+  等价（clean / tx 不干净 / internal / unsupported / resign / 仅 fail 六种组合）、
+  报告是合法 JSON 且是 `stringify(indent=2)` 的不动点、转义可逆、空列表全零。
+  JSON 断言不用 `Map[String, @json.Json]`：该类型进 blackbox test 签名会让
+  moonc 0.10.22 段错误（已记进 AGENTS）。
+- 实测（`/tmp` 解包，不入库）：
+  - `--fork Cancun` 扫 3 个文件：`totals=files:3 cases:27 pass:0 fail:25 skip_expected:2
+    internal_errors:0`；`--report` 产物经独立 `python -c json.load` 复核合法。
+  - `--shard 0/2` → `{eip1153_tstore, stCreateTest}`（index 0,2），`--shard 1/2` →
+    `{eip4844_blobs}`（index 1），两片不重不漏。
+  - 同参数两次运行 stdout 与报告逐字节相同；`--strict` → exit 1；空目录 / 坏分片 → exit 2。
+
 ### 修复（B07 审阅）
 
 - **`Snapshot` 不绑定 `State` 实例，跨实例混用会静默损坏状态**（P2）：句柄只存

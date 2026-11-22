@@ -76,7 +76,7 @@ MoonBit 一个模块内的包路径就是目录本身。按真实依赖边界切
 | `precompiles/` | `PrecompileProvider` + 分组实现 | crypto, types | 计划 |
 | `host/` | `Host` trait、BlockEnv/TxEnv、`Inspector`、EIP-3155 trace | types, state | 计划（C08） |
 | `facade/` | `Evm`、`ExecutionResult`、`State` diff、`Spec` revision 表 | 全部 | 计划 |
-| `statetest/` | fixture runner（薄 CLI `cmd/main` 调用） | types, rlp, crypto, json | **已落地**（B06：模型 / `indexes` 展开 / tx 0–3 解码 / 重签校验）；执行与 state diff 待 B08 |
+| `statetest/` | fixture runner（薄 CLI `cmd/main` 调用） | types, rlp, crypto, json, state | **已落地**（B06：模型 / `indexes` 展开 / tx 0–3 解码 / 重签校验；B08：harness v0 / 账户级比对 / pass-fail 计数 / stub executor；B09：目录扫描 / 分片 / JSON 报告骨架）；执行正确性待 P1 |
 | `bench/` | benchmark runner（evmone-bench 兼容格式） | facade | 计划（X01） |
 | `cmd/main/` | `reckon` CLI 骨架 | core/env | **已落地**（B01） |
 | `tools/depcheck/` | 依赖白名单闸（**Go**，非 MoonBit 包） | — | **已落地** |
@@ -244,7 +244,7 @@ v1 不做全流程可替换 `Handler`；固定执行循环，降低三臂分歧�
 
 | 门 | 内容 | 前置 | 验收 |
 |---|---|---|---|
-| G0 | harness 可复现 | P0 | 1 个 Cancun family 账户级绿 |
+| G0 | harness 可复现 | P0 | 按 §3 G0 口径：加载 → 解码 tx（含 txbytes 重签）→ 1 个 Cancun family 跑完不崩，输出账户级 diff 与 pass/fail 计数，报告可复现；**不含执行正确性** |
 | G1 | Cancun 核心 | P1 | 非预编译 ≥99%，ref/fast diff=0 |
 | G2 | Prague 核心 | P2 | 非加密 ≥99%，预编译分组报告 |
 | G3 | Osaka 核心 | P3 | 非加密 ≥99%（develop） |
@@ -318,6 +318,8 @@ P0 + P1 + D01 + X01 ≈ **68–95 人日**，单臂 native、Cancun only、预�
 | L5 | 主网块 replay | 可选；需 MPT/归档节点 | P6 |
 
 **报告固定字段**：fixture tag + commit、fork、format、pass/total、`txbytes` 覆盖、`expectException` 覆盖、per-precompile-group、三臂 divergence、bench 校验和。
+
+> B09 的 `reckon statetest --report <path>` 只落**骨架**：fixture tag/commit、fork、format、pass/total、`txbytes` 覆盖、`expectException` 覆盖已就位；per-precompile-group（G1 后）、三臂 divergence（X05）、bench 校验和（X01）尚未产生，写入报告的时刻也不该凭空补零。
 
 ### 5.1 差分轴
 
@@ -401,7 +403,7 @@ Reference vs Fast、以及三臂之间，至少比较：
 
 - MoonBit 包：`types`/`crypto`/`rlp`/`state`/`interpreter`/`precompiles`/`host`/`facade`。
 - CLI：`reckon statetest`、`reckon run`、`reckon trace`、`reckon bench`。
-- 报告：`conformance.json`、`bench.json`、`divergence.json`。
+- 报告：`conformance.json`（B09 起以 `reckon statetest --report` 的 JSON 骨架为雏形）、`bench.json`、`divergence.json`。
 - ADR 台账（第 10 节）。
 - API 文档 + 嵌入示例（native / wasm-gc / js）。
 

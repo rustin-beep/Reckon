@@ -2,9 +2,9 @@
 
 Embeddable EVM execution core in MoonBit.
 
-Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP,
-B05 secp256k1, B06 fixture loader and B07 state model landed; the interpreter (P1)
-has not started.
+Status: **P0 done** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP,
+B05 secp256k1, B06 fixture loader, B07 state model, B08 harness v0 and B09
+corpus/report landed; the interpreter (P1) has not started.
 
 ## Layout
 
@@ -17,7 +17,7 @@ has not started.
 | [`crypto/`](crypto) | `keccak256`、`secp256k1`（域/群、ECDSA、RFC 6979、recover、地址推导） |
 | [`rlp/`](rlp) | canonical RLP encode/decode |
 | [`state/`](state) | 内存状态模型：Account/Storage、变更日志 + snapshot/revert、canonical 导出、账户级 `StateDiff` |
-| [`statetest/`](statetest) | EEST state test 解析：fixture 模型、tx 0/1/2/3 解码、`txbytes` 重签校验 |
+| [`statetest/`](statetest) | EEST state test 解析与执行流水线：fixture 模型、tx 0/1/2/3 解码、`txbytes` 重签校验、harness v0（账户级比对 + pass/fail 计数 + stub executor）、corpus 层（分片 + 跨文件汇总 + JSON 报告骨架） |
 | [`cmd/main/`](cmd/main) | `reckon` CLI skeleton |
 | `probes/` | 本地研究探针，**不入库**（第三方源码与绝对路径，来源见本地 `probes/README.md`） |
 | [`fixtures/`](fixtures/eest) | EEST v5.4.0 stable 语料（tarball + 解包元数据） |
@@ -35,12 +35,15 @@ has not started.
 | B05 | secp256k1 | done：自研（4×64 limb + 伪梅森归约、Jacobian 点运算、RFC 6979 low-s 签名、malleable recover、地址推导）；native 标量乘 1.45 ms、sign 2.1 ms |
 | B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；`expectException` 的 case 归 `expected_invalid`（不计入 errors、不影响退出码，明细保留细分 class）；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
 | B07 | state model v0 | done：Account/Storage、变更日志（`enum Change`）+ snapshot/revert（嵌套 LIFO、句柄 id 全局唯一故只对产生它的 `State` 有效、失效/异实例句柄报 `InvalidSnapshot`）、canonical `accounts()`（按地址/槽排序、去零槽、去 empty）、账户级 `StateDiff`（before/after 的 `None` 语义）；`U256: Hash`；native 10k 账户下 `accounts()` 12 ms、`diff()`（1000 账户变化）31 ms、`snapshot`+1000 写+`revert` 0.8 ms/轮（debug 构建）。**warm/cold、transient、refund、EIP-6780 未做**，归 C09 |
-| B08 | harness v0 | not started |
-| B09 | corpus/report | not started |
+| B08 | harness v0 | done：`run_harness(fixtures, fork, execute)`——每个 case 新建 `State`、调用显式执行回调、与 `post.state` 的 canonical 形态做账户级比对（nonce/balance/code/非零槽，8 类 mismatch 分类）、执行后 `State::diff()` 摘要；`expectException` → `skip_expected`、type 4 → `skip_unsupported`；退出码判定收敛成纯函数 `exit_code`（默认 state fail 不红，`--strict` 才红）。真实语料：`test_basic_tload_after_store` fail=1（extra_slot / missing_slot / missing_account / nonce / balance）、`test_invalid_tx_blob_count` skip_expected=2、`CreateOOGFromEOARefunds` 24 个 Cancun case 跑完不崩；两次运行输出逐字节一致 |
+| B09 | corpus/report | done：`reckon statetest <fixture-or-dir>`——目录递归 `*.json`（排序用**字典序**，不用 `String::compare` 的长度优先序）、`--shard <i>/<n>` 确定性分片、`--report <path>` 写 JSON 骨架（corpus tag+commit / fork / format / `executor=stub` / `checks` 三项 `not_checked` / 每文件计数 / totals，整数不带小数点）；多文件模式只出计数行（明细留单文件模式）；退出码走合计版纯函数 `CorpusTotals::exit_code`，与单文件 `exit_code` 有等价性单测。**缺口**：per-precompile-group、三臂 divergence、bench 校验和还没数据，报告里不补零 |
 
-> **G0 仍未达成**：B06 做到「fixture 加载 + tx 0/1/2/3 解码 + `txbytes` 重签校验」，
-> B07 做到「账户级 state diff 结构」，但 `post.state` 比对、pass/fail 与 CLI 报告要等
-> B08（harness）；C09 的 warm/cold、transient、refund、EIP-6780 也仍未做。
+> **G0（harness 口径）已达成**：加载 → 解码 tx（含 `txbytes` 重签）→ Cancun family
+> 跑完不崩 → 输出账户级 diff 与 pass/fail 计数，报告可复现。
+> **执行正确性未判**：P0 没有 interpreter，CLI 的 executor 是 no-op，输出里无条件打印
+> `execution=stub (no interpreter; G0 harness only)` 与 `state_root=not_checked` /
+> `logs=not_checked`。因此 stub 下的 `fail` 不是实现缺陷，通过率与账户级绿留给 G1/P1。
+> C09 的 warm/cold、transient、refund、EIP-6780 同样仍未做。
 
 ### probes
 
@@ -112,6 +115,20 @@ npm 构建产物以及本机绝对路径。来源、许可证与重新获取方�
 - `probe/fixtures/.meta/fixtures.ini`（`--until=Prague`）
 - `probe/fixtures/.meta/index.json`（176,149 case / 44,039 state test）
 - `listing.txt`（tar 条目）
+
+跑语料（先把 tarball 解到临时目录，解出来的树不入库）：
+
+```bash
+# 单文件：详细模式（tx 计数 + harness 计数 + mismatch 明细）
+moon run cmd/main -- statetest <dir>/state_tests/cancun/eip1153_tstore/test_basic_tload_after_store.json --fork Cancun
+# 目录：语料模式（递归 *.json，每个文件一行计数 + totals + JSON 报告骨架）
+moon run cmd/main -- statetest <dir>/state_tests --fork Cancun --report /tmp/conformance.json
+# 分片：同一 `i/n` 在任何机器上切出同一批文件（按字典序取模）
+moon run cmd/main -- statetest <dir>/state_tests --fork Cancun --shard 1/4
+```
+
+P0 的 executor 是 stub：`pass=0` 是预期结果，输出里会无条件打印
+`execution=stub (no interpreter; G0 harness only)`；`--strict` 才会因 state mismatch 变红。
 
 复现命令见 [`PLAN.md`](PLAN.md) 附录 B。
 

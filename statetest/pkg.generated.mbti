@@ -5,17 +5,26 @@ import {
   "moonbitlang/core/debug",
   "vitro/reckon/crypto",
   "vitro/reckon/rlp",
+  "vitro/reckon/state",
   "vitro/reckon/types",
 }
 
 // Values
 pub fn address_from_secret_key(@types.U256) -> @types.Address?
 
+pub fn alloc_entries(Alloc) -> Array[@state.AccountEntry]
+
+pub fn canonical_accounts(Alloc) -> Array[@state.AccountEntry] raise @state.StateError
+
 pub fn check_fields(Case, DecodedTx) -> Array[String]
+
+pub fn compare_accounts(Array[@state.AccountEntry], Array[@state.AccountEntry]) -> CompareReport
 
 pub fn decode_tx(BytesView) -> DecodedTx raise TxError
 
 pub fn describe_secp_error(@crypto.SecpError) -> String
+
+pub fn exit_code(Summary, HarnessSummary, Bool) -> Int32
 
 pub fn expand_case(Fixture, String, Array[PostEntry], Int32) -> Case raise FixtureError
 
@@ -23,9 +32,17 @@ pub fn parse_document(String) -> Array[Fixture] raise FixtureError
 
 pub fn recover_sender(DecodedTx) -> @types.Address?
 
+pub fn report_json(String, Array[FileReport]) -> String
+
 pub fn resign(DecodedTx, BytesView, @types.U256) -> ResignOutcome
 
 pub fn run_document(Array[Fixture], String) -> Summary raise FixtureError
+
+pub fn run_harness(Array[Fixture], String, (Case, @state.State) -> Unit) -> HarnessSummary
+
+pub fn shard_pick(Array[String], Int32, Int32) -> Array[String]
+
+pub fn totals_of(Array[FileReport]) -> CorpusTotals
 
 // Errors
 pub suberror FixtureError {
@@ -123,6 +140,40 @@ pub(all) struct Case {
   expect_exception : Array[String]
 }
 
+#derive(@debug.Debug)
+pub(all) struct CompareReport {
+  missing_accounts : Int32
+  extra_accounts : Int32
+  nonce_mismatches : Int32
+  balance_mismatches : Int32
+  code_mismatches : Int32
+  missing_slots : Int32
+  extra_slots : Int32
+  slot_value_mismatches : Int32
+  mismatches : Array[Mismatch]
+}
+pub fn CompareReport::is_match(Self) -> Bool
+
+#derive(@debug.Debug)
+pub(all) struct CorpusTotals {
+  files : Int32
+  cases : Int32
+  tx_errors : Int32
+  resign_mismatches : Int32
+  unsupported : Int32
+  txbytes_present : Int32
+  txbytes_missing : Int32
+  expected_invalid : Int32
+  pass : Int32
+  fail : Int32
+  skip_expected : Int32
+  skip_unsupported : Int32
+  internal_errors : Int32
+}
+pub fn CorpusTotals::add(Self, FileReport) -> Self
+pub fn CorpusTotals::exit_code(Self, Bool) -> Int32
+pub fn CorpusTotals::new() -> Self
+
 pub(all) struct DecodedTx {
   tx_type : TxType
   chain_id : @types.U256?
@@ -150,6 +201,24 @@ pub fn DecodedTx::encode_with(Self, @types.U256, @types.U256) -> Bytes
 pub fn DecodedTx::unsigned_item(Self) -> @rlp.Item
 
 #derive(@debug.Debug)
+pub(all) struct FileReport {
+  path : String
+  cases : Int32
+  tx_errors : Int32
+  resign_mismatches : Int32
+  unsupported : Int32
+  txbytes_present : Int32
+  txbytes_missing : Int32
+  expected_invalid : Int32
+  pass : Int32
+  fail : Int32
+  skip_expected : Int32
+  skip_unsupported : Int32
+  internal_errors : Int32
+}
+pub fn FileReport::of(String, Summary, HarnessSummary) -> Self
+
+#derive(@debug.Debug)
 pub(all) struct Fixture {
   name : String
   chain_id : @types.U256
@@ -162,6 +231,29 @@ pub fn Fixture::forks(Self) -> Array[String]
 pub fn Fixture::post_for(Self, String) -> Array[PostEntry]?
 
 #derive(@debug.Debug)
+pub(all) struct HarnessSummary {
+  cases : Int32
+  pass : Int32
+  fail : Int32
+  skipped_expected_invalid : Int32
+  skipped_unsupported : Int32
+  internal_errors : Int32
+  missing_accounts : Int32
+  extra_accounts : Int32
+  nonce_mismatches : Int32
+  balance_mismatches : Int32
+  code_mismatches : Int32
+  missing_slots : Int32
+  extra_slots : Int32
+  slot_value_mismatches : Int32
+  diff_accounts : Int32
+  diff_slots : Int32
+  details : Array[String]
+  details_omitted : Int32
+}
+pub fn HarnessSummary::new() -> Self
+
+#derive(@debug.Debug)
 pub(all) struct Indexes {
   data : Int32
   gas : Int32
@@ -170,6 +262,30 @@ pub(all) struct Indexes {
 pub fn Indexes::output(Self, &Logger) -> Unit
 pub fn Indexes::to_string(Self) -> String
 pub impl Show for Indexes
+
+#derive(@debug.Debug)
+pub(all) struct Mismatch {
+  address : @types.Address
+  class : MismatchClass
+  slot : @types.U256?
+  expected : String
+  actual : String
+}
+
+#derive(@debug.Debug)
+pub(all) enum MismatchClass {
+  MissingAccount
+  ExtraAccount
+  Nonce
+  Balance
+  Code
+  MissingSlot
+  ExtraSlot
+  SlotValue
+}
+pub fn MismatchClass::output(Self, &Logger) -> Unit
+pub fn MismatchClass::to_string(Self) -> String
+pub impl Show for MismatchClass
 
 #derive(@debug.Debug)
 pub(all) struct PostEntry {

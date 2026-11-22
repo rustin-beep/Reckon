@@ -100,6 +100,19 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
   都漂移、CI 的 `git diff --exit-code` 会红。
 - `moon.pkg` 里一旦有 `import { … } for "test"`，未加注解的那组**只对非 test 目标
   生效**；test 目标要把那组再写一遍（临时探针时踩到过）。
+- **`String::compare` 是「长度优先」，不是字典序**（0.10.22 实测：`"ab".compare("b") == 1`、
+  `"a10".compare("a9") == 1`、`["b","ab","aa"].sort()` → `b, aa, ab`）。凡是要给人看的
+  排序（报告的文件序、分片切法）都别用它——`Array[String]::sort()` 用的就是它——
+  显式逐字符比（`statetest/corpus.mbt` 的 `compare_paths`）。
+- **`StringView::to_string()` 在 executable 包里会触发编译器 ICE**（段错误、无诊断；
+  0.10.22 实测，`path[2:].to_string()` 即中招）。`StringView → String` 一律用
+  `to_owned()`；`length()` / `[i]` / 切片本身没问题。
+- **blackbox test 里出现 `Map[String, @json.Json]` 会 ICE**：只要该类型进签名
+  （`as_object()`、`Json::value()` 都会带出它），moonc 0.10.22 段错误且不报诊断。
+  生产代码（库内）用 `Map` 构造 JSON 正常，只有 `*_test.mbt` 受限——测试改用
+  `@json.valid` + `parse → stringify` 往返 + 文本断言。
+- 测试里带断言的 helper 要写 `-> Unit raise`：`assert_eq` / `assert_true` 本身是
+  raising（`*_test.mbt` 的 `test` 块能接，普通 helper 不能）。
 
 ## 7. 工作流
 

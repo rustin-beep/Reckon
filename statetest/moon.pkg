@@ -2,5 +2,6 @@ import {
   "vitro/reckon/types",
   "vitro/reckon/rlp",
   "vitro/reckon/crypto",
+  "vitro/reckon/state",
   "moonbitlang/core/json",
 }
