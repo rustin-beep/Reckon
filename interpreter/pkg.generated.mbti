@@ -1,0 +1,42 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/interpreter"
+
+import {
+  "moonbitlang/core/debug",
+  "vitro/reckon/types",
+}
+
+// Values
+
+// Errors
+#derive(@debug.Debug)
+pub suberror StackError {
+  Underflow(needed~ : Int32, available~ : Int32)
+  Overflow(limit~ : Int32)
+  InvalidDepth(depth~ : Int32)
+}
+pub fn StackError::to_repr(Self) -> @debug.Repr
+pub fn StackError::to_string(Self) -> String
+pub impl Show for StackError
+
+// Types and methods
+pub struct Stack {
+  // private fields
+}
+pub fn Stack::clear(Self) -> Unit
+pub fn Stack::depth(Self) -> Int32
+pub fn Stack::drop(Self) -> Unit raise StackError
+pub fn Stack::dup(Self, Int32) -> Unit raise StackError
+pub fn Stack::is_empty(Self) -> Bool
+pub fn Stack::is_full(Self) -> Bool
+pub fn Stack::limit() -> Int32
+pub fn Stack::new() -> Self
+pub fn Stack::peek(Self, Int32) -> @types.U256 raise StackError
+pub fn Stack::pop(Self) -> @types.U256 raise StackError
+pub fn Stack::push(Self, @types.U256) -> Unit raise StackError
+pub fn Stack::set_top(Self, @types.U256) -> Unit raise StackError
+pub fn Stack::swap(Self, Int32) -> Unit raise StackError
+
+// Type aliases
+
+// Traits

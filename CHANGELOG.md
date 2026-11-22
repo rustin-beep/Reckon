@@ -4,6 +4,67 @@
 
 ## [未发布] 0.1.0 — 2026-11-20
 
+### 新增（P1/C01：EVM 栈）
+
+- `interpreter`：新包，只依赖 `types`。按 PLAN C01 用扁平布局：`FixedArray[UInt64]` 长
+  `1024 * 4`，第 i 项（栈底 0 起）占 `data[4i .. 4i+3]`（limb 小端，`l0` 最低位），`sp`
+  是项数；`data`/`sp` 都是 `priv`，包外只看到 `pub struct Stack`（`pub struct` 的普通字段
+  包外可读，不封住就等于把裸 `FixedArray` 交出去）。
+- 公开 API：`new` / `limit`（=1024）/ `depth` / `is_empty` / `is_full` / `clear` /
+  `push` / `pop` / `drop` / `peek(depth)` / `set_top` / `dup(depth)` / `swap(depth)`。
+  `peek` 的深度从 0 起算，`dup`/`swap` 从 1 起算（EVM 记法）；`swap(1)` 是「栈顶与顶下
+  第一项」。
+- 错误：`StackError` = `Underflow(needed, available)` / `Overflow(limit)` /
+  `InvalidDepth(depth)`；`#derive(Debug)` + `Show`（中文、稳定格式，`pub extend … Show::{to_string}`
+  让包外也能直接 `err.to_string()`，供 C04/C15 引用）。不用 `abort`/`panic`：C04 负责把它
+  映射成 EVM 的 exceptional halt。
+- **错误路径原子**：每个分支先校验、后写入，抛错时 `sp` 与已有项的 limb 都不变（白盒用
+  `data` 全量快照逐 limb 断言）；报错之后同一个栈可以继续用。
+- 包内 limb 快路径（不导出，`moon info` 里不出现）：`push_limbs` / `pop_limbs` /
+  `peek_limbs` / `set_top_limbs` / `item_limb` / `set_item_limb`。供 C05/C14 绕开 `U256`
+  对象构造；与 U256 接口逐 limb 同语义（白盒把同一串操作分别喂给两套接口后比 `data`）。
+  `item_limb`/`set_item_limb` 不做运行期校验，注释写明调用前提（索引已由调用方校验）。
+- 测试：**27 条**（黑盒 `stack_test.mbt` 17 + 白盒 `stack_wbtest.mbt` 10），四后端
+  **238/238**（P0 的 211 条无回归）。覆盖：空栈读/写全部报错、1024 次 push 成功而第 1025
+  次 `Overflow` 且栈不动、`peek` 的 `depth=sp` 与 `depth=-1`、`dup`/`swap` 的 1..16 语义、
+  满栈 `dup` 溢出、`clear` 只清 `sp`、`StackError` 的三条文本，以及固定种子 LCG 的
+  **500 步随机对拍**——参考模型 `Array[U256]`，每步比 `depth`/`is_empty`/逐项 `peek`，
+  错误分支用 `try … catch` 断言 `StackError` 具体变体、并断言模型与栈都未变（不用
+  时间/系统随机，四后端同一序列）。
+- 探针（`probes/stack/`，不入库；**release**、5M 迭代 × 7 次重复 × 3 进程取中位，
+  单位 ns/op）：
+
+  | bench | native | wasm | wasm-gc | js |
+  |---|---:|---:|---:|---:|
+  | 空循环基线 | 0.2 | 0.2 | 0.2 | 4.7 |
+  | `push` + `pop`（U256 接口） | 46.2 | 28.2 | 9.4 | 10.2 |
+  | `push_limbs` + `pop_limbs` | 25.2 | 19.4 | 6.2 | 10.5 |
+  | `peek`（U256 接口） | 43.4 | 27.9 | 6.9 | 7.2 |
+  | `peek_limbs` | 21.8 | 13.1 | 3.7 | 6.7 |
+  | `dup` + `drop` | 4.6 | 6.1 | 3.5 | 8.0 |
+  | `swap` | 5.4 | 8.7 | 3.2 | 9.6 |
+  | `pop` + add + `push`（U256 接口） | 172.3 | 186.0 | 13.8 | 77.5 |
+  | `pop_limbs` + add + `push_limbs` | 44.3 | 29.6 | 6.1 | 35.6 |
+  | 原地 limb 加法（`item_limb`/`set_item_limb`） | 23.0 | 14.0 | 1.1 | 36.2 |
+  | 对照 `FixedArray[U256]`（同形 pop+add+push） | 123.5 | 126.0 | 8.7 | 58.6 |
+  | 对照 `Array[U256]`（同形） | 127.0 | 133.1 | 9.0 | 60.2 |
+
+  读表注意三点：①**绝对值的跨后端比较没有意义**（wasm-gc 与 native 差一个量级，同一份源码
+  在不同后端的内存模型不同），只看同一后端内「U256 接口 vs limb 快路径」的差距；②
+  `pop`+add+`push` 的 U256 行里含 `@types.U256::add`（`overflowing_add` 返回二元组）的成本，
+  不是栈本身的成本，纯栈对比看 `push`+`pop` 与 `peek` 两行；③`push`+`pop` 是成对往返，
+  值原样返回，编译器可能把一部分往返折掉，故同时给出空循环基线。
+- **js 上扁平不占优（实测）**：`push`+`pop` 10.2 ns（U256 接口）vs 10.5 ns（limb）、
+  `peek` 7.2 vs 6.7 ns——js 的 `UInt64` 走大整数路径，光空循环基线就 4.7 ns；既有探针
+  （本地 `probes/dispatch`）在 `pop`+add+`push` 上也给出扁平 60.3 ns 慢于堆对象 53.7 ns。
+  PLAN 仍选扁平的依据不是「所有后端都更快」，而是：native（46.2 → 25.2，约 1.8×）与
+  wasm（28.2 → 19.4，约 1.5×）都明确占优；扁平布局 + `sp` 是 1024 上限与 C14 零分配的
+  唯一可行表示；ADR-3/R3 只要求 js 承诺正确性、不承诺性能。**不改公开 API 语义去迁就
+  微基准。**
+- 与 §0 既有探针的对照：`probes/dispatch` 的 `stack_flat`（`unsafe_*` + pop+add+push）
+  native 32.5 ns、`stack_heap` 67.8 ns；本探针的 limb 版 `pop`+add+`push` 44.3 ns
+  （多出的是带边界检查的 `get`/`set` 与函数边界），量级一致。
+
 ### 新增
 
 - `types`：`U256`（4×UInt64 limb，加法/减法/乘法/除法/取模/`addmod`/`mulmod`/`exp`/

@@ -2,9 +2,10 @@
 
 Embeddable EVM execution core in MoonBit.
 
-Status: **P0 done** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP,
-B05 secp256k1, B06 fixture loader, B07 state model, B08 harness v0 and B09
-corpus/report landed; the interpreter (P1) has not started.
+Status: **P1 in progress — C01 stack landed** — P0 done: B01 scaffolding, B02 types,
+B03 keccak256, B04 RLP, B05 secp256k1, B06 fixture loader, B07 state model, B08 harness
+v0, B09 corpus/report. P1 started: `interpreter/` 的 EVM 栈（C01）已落地——1024 项上限、
+扁平 `FixedArray[UInt64]`（4 limb/项）、`StackError`、包内 limb 快路径；C02–C15 未开始。
 
 ## Layout
 
@@ -16,6 +17,7 @@ corpus/report landed; the interpreter (P1) has not started.
 | [`types/`](types) | `U256` (4 x UInt64 limbs)、`Address`、`Hash32`、hex |
 | [`crypto/`](crypto) | `keccak256`、`secp256k1`（域/群、ECDSA、RFC 6979、recover、地址推导） |
 | [`rlp/`](rlp) | canonical RLP encode/decode |
+| [`interpreter/`](interpreter) | EVM 栈（C01）：1024 项上限、扁平 `FixedArray[UInt64]`（4×`UInt64`/项）、`StackError`、包内 limb 快路径 |
 | [`state/`](state) | 内存状态模型：Account/Storage、变更日志 + snapshot/revert、canonical 导出、账户级 `StateDiff` |
 | [`statetest/`](statetest) | EEST state test 解析与执行流水线：fixture 模型、tx 0/1/2/3 解码、`txbytes` 重签校验、harness v0（账户级比对 + pass/fail 计数 + stub executor）、corpus 层（分片 + 跨文件汇总 + JSON 报告骨架） |
 | [`cmd/main/`](cmd/main) | `reckon` CLI skeleton |
@@ -45,6 +47,33 @@ corpus/report landed; the interpreter (P1) has not started.
 > `logs=not_checked`。因此 stub 下的 `fail` 不是实现缺陷，通过率与账户级绿留给 G1/P1。
 > C09 的 warm/cold、transient、refund、EIP-6780 同样仍未做。
 
+### Progress (P1)
+
+| ID | 工作包 | 状态 |
+|---|---|---|
+| C01 | 栈 | done：1024 项上限、扁平 `FixedArray[UInt64]`（4×`UInt64`/项、`sp` 为项数）、`StackError`（`Underflow`/`Overflow`/`InvalidDepth`，`Show` 中文稳定格式）、错误路径**原子**（抛错不改 `sp`、不改已有 limb）、包内 limb 快路径（`push_limbs`/`pop_limbs`/`peek_limbs`/`set_top_limbs`/`item_limb`/`set_item_limb`，不导出）；27 条测试（黑盒 17 + 白盒 10），四后端 **238/238** |
+| C02 | 内存 | not started |
+| C03 | gas | not started |
+| C04 | dispatch | not started |
+| C05 | 算术/位运算 | not started |
+| C06 | 环境/块/存储/日志 | not started |
+| C07 | 控制流/终止 | not started |
+| C08 | `Host` 接口 | not started |
+| C09 | Journal | not started |
+| C10 | CALL 族 | not started |
+| C11 | CREATE/CREATE2 | not started |
+| C12 | tx 层 | not started |
+| C13 | Reference executor | not started |
+| C14 | Fast baseline | not started |
+| C15 | diff + trace v0 | not started |
+
+C01 探针（`probes/stack`，不入库；**native release**，5M 迭代 × 7 次重复 × 3 进程取中位）：
+`push`+`pop` **46.2 ns**（U256 接口）/ **25.2 ns**（limb 快路径）、`peek(0..7)` 43.4 / 21.8 ns、
+`dup`+`drop` 4.6 ns、`swap` 5.4 ns、`pop`+add+`push` 172.3 / 44.3 ns、原地 limb 加法 23.0 ns；
+对照 `FixedArray[U256]` 123.5 ns、`Array[U256]` 127.0 ns（同形 `pop`+add+`push`）。
+**js 上扁平不占优**：`push`+`pop` 10.2 ns（U256 接口）vs 10.5 ns（limb）、`peek` 7.2 vs 6.7 ns，
+js 空循环基线本身就有 4.7 ns。四后端完整表见 [`CHANGELOG.md`](CHANGELOG.md)。
+
 ### probes
 
 | Probe | 用途 |
@@ -55,6 +84,7 @@ corpus/report landed; the interpreter (P1) has not started.
 | `secp/` | secp256k1 探针 |
 | `bignum/` | BigInt 常量/编译期探针 |
 | `dispatch/` `dispatch2/` `dispatch3/` | opcode dispatch 成本探针 |
+| `stack/` | C01 栈的每操作成本（生产 `Stack` 的 U256 接口 vs limb 快路径，四后端） |
 | `superinsn/` | EVM 风格超级指令探针 |
 | `consttest/` | 编译期 BigInt 常量探针 |
 | `provep/` | proof-carrying code / gas 合约探针 |
