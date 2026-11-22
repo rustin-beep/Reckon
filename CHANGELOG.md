@@ -50,6 +50,40 @@
   `moon fmt` / `moon info` 漂移检查；wasm-gc / js / native 三后端测试；
   `moon check --deny-warn`，warning 即失败。
 
+### 新增（B07：state model v0）
+
+- `types`：`U256` 的 `Hash` 实现（四个 limb 依次 `combine_uint64`）+ 显式
+  `pub extend U256 with Hash::{hash, hash_combine}`，供 `Map[U256, U256]` 做键；
+  `types/u256_test.mbt` 加 Map 键测试（0/1/max/跨 limb 命中、相邻键不串、覆盖写与删除）。
+- `state`：内存状态模型（只依赖 `types`），公开 API：
+  - 值类型 `AccountInfo`（`empty`/`is_empty`/`same`）、`AccountEntry`（`same`）；
+  - `State::new` / `from_accounts` / `basic` / `exists` / `code` / `storage` /
+    `original_storage`；
+  - `set_balance` / `set_nonce` / `set_code` / `set_storage` / `create_account` /
+    `destroy_account`；
+  - `snapshot` / `revert`（`Snapshot` 字段私有，外部无法伪造）、`accounts`、`diff`；
+  - `StateDiff` / `AccountDiff` / `StorageDiff`（字段公开，供 B08 读取）；
+    `StateDiff::is_empty` / `length`；错误 `StateError`（重复地址、重复槽、失效快照）。
+- 语义口径（测试逐条对应）：
+  - **empty account**：nonce/balance/code 全零且无槽 → `exists=false`、不导出、
+    不进 diff（EIP-161 口径；何时真正清除归 C09/C12）；
+  - **zero slot**：`set_storage(...,0)` 删槽；账户不存在时零写是 no-op（不造账户）；
+    导出与 diff 都不含零槽；
+  - **original_storage**：相对构造时 base，构造后新建账户原值为 0；
+  - **snapshot/revert**：日志只记旧值、逆序撤销，覆盖 balance/nonce/code/槽/创建/删除；
+    嵌套 LIFO，回滚会作废该快照及更晚的快照，重复回滚与伪造句柄都是
+    `InvalidSnapshot`；base 与 `original_storage` 不受回滚影响；
+  - **排序**：`accounts()` / `diff()` 的账户按 `Address` 比较序、槽按 `U256` 比较序
+    显式排序，`Map` 迭代序不外泄，输出逐字节可复现；
+  - **diff**：创建 `before=None`，删除或写空 `after=None`，仅槽变化仍出现，
+    清零槽 `after=None`、新写槽 `before=None`；`from_accounts` 深拷贝（base 与
+    current 不共享 storage 表），输入零槽丢弃、empty 账户按不存在处理。
+  - `State` 的字段用 `priv` 修饰：`pub struct` 的普通字段在包外**可读**，
+    `Map` 一旦可读就能被外部改，故必须显式 `priv`。
+- 测试：新增 54 条（`state` 53 + `types` 1），三后端 **166/166**；含 200 步固定种子
+  LCG 参考模型对拍（整表深拷贝式快照、LIFO 回滚、每步比对 canonical 导出）。
+  变异验证：回滚不清零槽 → 2 条红；日志改正序撤销 → 7 条红；diff 忽略仅槽变化 → 2 条红。
+
 ### 修复（B06 审阅）
 
 - **`expectException` 的豁免口径统一**（P2）：此前只有「签名不可恢复」这一条分支

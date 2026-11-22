@@ -3,7 +3,8 @@
 Embeddable EVM execution core in MoonBit.
 
 Status: **P0 in progress** — B01 scaffolding, B02 types, B03 keccak256, B04 RLP,
-B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not started.
+B05 secp256k1, B06 fixture loader and B07 state model landed; the interpreter (P1)
+has not started.
 
 ## Layout
 
@@ -15,6 +16,7 @@ B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not starte
 | [`types/`](types) | `U256` (4 x UInt64 limbs)、`Address`、`Hash32`、hex |
 | [`crypto/`](crypto) | `keccak256`、`secp256k1`（域/群、ECDSA、RFC 6979、recover、地址推导） |
 | [`rlp/`](rlp) | canonical RLP encode/decode |
+| [`state/`](state) | 内存状态模型：Account/Storage、变更日志 + snapshot/revert、canonical 导出、账户级 `StateDiff` |
 | [`statetest/`](statetest) | EEST state test 解析：fixture 模型、tx 0/1/2/3 解码、`txbytes` 重签校验 |
 | [`cmd/main/`](cmd/main) | `reckon` CLI skeleton |
 | `probes/` | 本地研究探针，**不入库**（第三方源码与绝对路径，来源见本地 `probes/README.md`） |
@@ -32,12 +34,13 @@ B05 secp256k1 and B06 fixture loader landed; the interpreter (P1) has not starte
 | B04 | RLP | done：canonical encode/decode + 规范性拒绝 + 随机树往返 |
 | B05 | secp256k1 | done：自研（4×64 limb + 伪梅森归约、Jacobian 点运算、RFC 6979 low-s 签名、malleable recover、地址推导）；native 标量乘 1.45 ms、sign 2.1 ms |
 | B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；`expectException` 的 case 归 `expected_invalid`（不计入 errors、不影响退出码，明细保留细分 class）；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
-| B07 | state model v0 | not started |
+| B07 | state model v0 | done：Account/Storage、变更日志（`enum Change`）+ snapshot/revert（嵌套 LIFO、失效句柄报错）、canonical `accounts()`（按地址/槽排序、去零槽、去 empty）、账户级 `StateDiff`（before/after 的 `None` 语义）；`U256: Hash`；native 10k 账户下 `accounts()` 12 ms、`diff()`（1000 账户变化）31 ms、`snapshot`+1000 写+`revert` 0.8 ms/轮（debug 构建）。**warm/cold、transient、refund、EIP-6780 未做**，归 C09 |
 | B08 | harness v0 | not started |
 | B09 | corpus/report | not started |
 
-> **G0 仍未达成**：B06 只做到「fixture 加载 + tx 0/1/2/3 解码 + `txbytes` 重签校验」，
-> 账户级 state diff 与 pass/fail 判定要等 B07（state model）与 B08（harness）。
+> **G0 仍未达成**：B06 做到「fixture 加载 + tx 0/1/2/3 解码 + `txbytes` 重签校验」，
+> B07 做到「账户级 state diff 结构」，但 `post.state` 比对、pass/fail 与 CLI 报告要等
+> B08（harness）；C09 的 warm/cold、transient、refund、EIP-6780 也仍未做。
 
 ### probes
 

@@ -1,0 +1,89 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vitro/reckon/state"
+
+import {
+  "moonbitlang/core/debug",
+  "vitro/reckon/types",
+}
+
+// Values
+
+// Errors
+#derive(@debug.Debug)
+pub suberror StateError {
+  DuplicateAccount(address~ : @types.Address)
+  DuplicateStorageKey(address~ : @types.Address, key~ : @types.U256)
+  InvalidSnapshot
+}
+pub fn StateError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) struct AccountDiff {
+  address : @types.Address
+  before : AccountInfo?
+  after : AccountInfo?
+  storage : Array[StorageDiff]
+}
+
+pub(all) struct AccountEntry {
+  address : @types.Address
+  info : AccountInfo
+  storage : Array[(@types.U256, @types.U256)]
+}
+pub fn AccountEntry::same(Self, Self) -> Bool
+
+pub(all) struct AccountInfo {
+  mut nonce : UInt64
+  mut balance : @types.U256
+  mut code : Bytes
+}
+pub fn AccountInfo::empty() -> Self
+pub fn AccountInfo::is_empty(Self) -> Bool
+pub fn AccountInfo::same(Self, Self) -> Bool
+
+type Change
+
+type Rec
+
+pub struct Snapshot {
+  // private fields
+}
+
+type SnapshotMark
+
+pub struct State {
+  // private fields
+}
+pub fn State::accounts(Self) -> Array[AccountEntry]
+pub fn State::basic(Self, @types.Address) -> AccountInfo
+pub fn State::code(Self, @types.Address) -> Bytes
+pub fn State::create_account(Self, @types.Address) -> Unit
+pub fn State::destroy_account(Self, @types.Address) -> Unit
+pub fn State::diff(Self) -> StateDiff
+pub fn State::exists(Self, @types.Address) -> Bool
+pub fn State::from_accounts(Array[AccountEntry]) -> Self raise StateError
+pub fn State::new() -> Self
+pub fn State::original_storage(Self, @types.Address, @types.U256) -> @types.U256
+pub fn State::revert(Self, Snapshot) -> Unit raise StateError
+pub fn State::set_balance(Self, @types.Address, @types.U256) -> Unit
+pub fn State::set_code(Self, @types.Address, Bytes) -> Unit
+pub fn State::set_nonce(Self, @types.Address, UInt64) -> Unit
+pub fn State::set_storage(Self, @types.Address, @types.U256, @types.U256) -> Unit
+pub fn State::snapshot(Self) -> Snapshot
+pub fn State::storage(Self, @types.Address, @types.U256) -> @types.U256
+
+pub(all) struct StateDiff {
+  accounts : Array[AccountDiff]
+}
+pub fn StateDiff::is_empty(Self) -> Bool
+pub fn StateDiff::length(Self) -> Int32
+
+pub(all) struct StorageDiff {
+  key : @types.U256
+  before : @types.U256?
+  after : @types.U256?
+}
+
+// Type aliases
+
+// Traits

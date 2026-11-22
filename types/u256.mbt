@@ -133,6 +133,19 @@ pub impl Compare for U256 with fn compare(self, other) -> Int32 {
 }
 
 // ---------------------------------------------------------------------------
+// 哈希
+// ---------------------------------------------------------------------------
+
+///|
+/// 四个 limb 依次混入；只要求「相等即同哈希」，不要求与 `compare` 同序。
+pub impl Hash for U256 with fn hash_combine(self, hasher) -> Unit {
+  hasher.combine_uint64(self.l0)
+  hasher.combine_uint64(self.l1)
+  hasher.combine_uint64(self.l2)
+  hasher.combine_uint64(self.l3)
+}
+
+// ---------------------------------------------------------------------------
 // 加法 / 减法
 // ---------------------------------------------------------------------------
 
@@ -576,6 +589,9 @@ pub extend U256 with Eq::{equal, not_equal}
 
 ///|
 pub extend U256 with Compare::{compare, op_lt, op_gt, op_le, op_ge}
+
+///|
+pub extend U256 with Hash::{hash, hash_combine}
 
 ///|
 pub extend U256 with BitAnd::{land}

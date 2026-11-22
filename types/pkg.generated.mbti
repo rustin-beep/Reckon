@@ -100,6 +100,8 @@ pub fn U256::from_bytes_be(BytesView) -> Self raise DecodeError
 pub fn U256::from_hex(String) -> Self raise DecodeError
 pub fn U256::from_limbs(UInt64, UInt64, UInt64, UInt64) -> Self
 pub fn U256::from_u64(UInt64) -> Self
+pub fn U256::hash(Self) -> Int32
+pub fn U256::hash_combine(Self, Hasher) -> Unit
 pub fn U256::is_zero(Self) -> Bool
 pub fn U256::land(Self, Self) -> Self
 pub fn U256::limb(Self, Int32) -> UInt64
@@ -136,6 +138,7 @@ pub impl BitXOr for U256
 pub impl Compare for U256
 pub impl Div for U256
 pub impl Eq for U256
+pub impl Hash for U256
 pub impl Mod for U256
 pub impl Mul for U256
 pub impl Show for U256

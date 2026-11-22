@@ -73,7 +73,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
   最终 `commit` / `push` 由用户执行。
 - **不写"讨论文档"**：结论进对话或 PLAN/AGENTS，不额外造 md。
 
-## 6. 本仓 MoonBit 事实（0.10.21）
+## 6. 本仓 MoonBit 事实（0.10.21 / 0.10.22）
 
 - `Int` 是 `Int32` 的别名；`Int32::from_int` 不存在，移位直接用 `Int`。
 - `derive(...)` 已废弃，用 `#derive(Debug)`；trait 方法要显式
@@ -81,6 +81,25 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
 - 跨包构造 enum 必须 `pub(all) enum`；`pub enum` 只读。
 - `Bytes[a:]` 得到 `BytesView`，`.to_owned()` 转 `Bytes`。
 - `.mbtx` 脚本无法 import 本模块的包；临时调试用模块内可执行包。
+- **`pub struct` 的普通字段在包外可读**（0.10.22 探针实测）：`pub struct` 是「可读
+  不可构造」，只有 `pub(all) struct` 才能跨包构造。所以内部 `Map`/`Array` 字段必须
+  写成 `priv`（`priv base : Map[…]`、`priv mut next_id : Int32`），否则外部能拿到
+  可变容器去改内部状态——`state/` 的 `State` 就是这么封的。
+- **`priv struct X` 不能当字段类型**：会报 `[4046] A public definition cannot depend
+  on private type`。包内类型用**默认可见性**（不写 `priv`），`moon info` 里表现为
+  只列类型名的 `type X`（不导出构造子）；反过来，不写 `priv` 又不出现在公开签名里
+  会吃 `missing_priv` 警告——出现在 `pub struct` 的字段里就算「出现过」，正好抵消。
+- struct 的 `mut` 字段是**引用语义**：`map.get(k)` 拿到对象后改字段会写回 map。
+  需要跨后端确定性时别依赖它，显式 `get` → 改 → `set` 写回（`state/` 全程这么做）。
+- 带标签字段的 enum 构造子，`match` 里**必须用带标签模式**（`Variant(a~, b~)`）；
+  写成位置模式报 `requires 0 positional arguments`，还会连带把字段判成 unused_field。
+- 构造时给带标签字段赋值是 `field=value`（`field~=value` 非法）；`{ id, }` 要留逗号，
+  否则报 `ambiguous_block`。
+- `for (k, v) in map.iter()` 才是解构；`for k, v in …` 是「下标 + 元素」。
+- `moon fmt` 会把源码里的 `Int` 改写成 `Int32`（`Int` 是别名），手写 `Int` 每次 fmt
+  都漂移、CI 的 `git diff --exit-code` 会红。
+- `moon.pkg` 里一旦有 `import { … } for "test"`，未加注解的那组**只对非 test 目标
+  生效**；test 目标要把那组再写一遍（临时探针时踩到过）。
 
 ## 7. 工作流
 

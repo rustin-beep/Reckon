@@ -71,7 +71,7 @@ MoonBit 一个模块内的包路径就是目录本身。按真实依赖边界切
 | `types/` | U256（4×UInt64 limb；BigInt 仅测试期 oracle）、Address/Hash32/hex、错误 | — | **已落地**（B02） |
 | `crypto/` | keccak256、secp256k1、modexp、ripemd160、blake2f、sha256；bn254/BLS12-381/P256 为可选子模块。**官方范围只提供 sha256 / ripemd160（`moonbitlang/x/crypto`），其余全部自研**——见 A.5 | types；`moonbitlang/x/crypto`（仅 RFC 6979 的 SHA-256/HMAC） | keccak256 **已落地**（B03）；secp256k1 **已落地**（B05：4×64 limb + 伪梅森归约、Jacobian、RFC 6979 low-s、malleable recover、地址）；其余待做 |
 | `rlp/` | canonical RLP encode/decode | types | **已落地**（B04） |
-| `state/` | Account/Storage、Journal（snapshot/revert）、warm/cold、transient、refund、selfdestruct | types | 计划（B07） |
+| `state/` | Account/Storage、Journal（snapshot/revert）、warm/cold、transient、refund、selfdestruct | types | **已落地**（B07：Account/Storage、变更日志 snapshot/revert、StateDiff；warm/cold/transient/refund/EIP-6780 待 C09） |
 | `interpreter/` | 栈/内存/gas/dispatch/帧/CALL/CREATE | types, state, crypto | 计划（P1 C01–C12） |
 | `precompiles/` | `PrecompileProvider` + 分组实现 | crypto, types | 计划 |
 | `host/` | `Host` trait、BlockEnv/TxEnv、`Inspector`、EIP-3155 trace | types, state | 计划（C08） |

@@ -216,3 +216,27 @@ test "u256 shifts match bigint oracle" {
   assert_eq(one.shl(256), @types.U256::zero())
   assert_eq(@types.U256::max_value().shr(255).to_u64(), 1UL)
 }
+
+///|
+test "u256 as map key" {
+  let m : Map[@types.U256, Int32] = Map([])
+  m.set(@types.U256::zero(), 10)
+  m.set(@types.U256::one(), 11)
+  m.set(@types.U256::max_value(), 12)
+  m.set(@types.U256::from_u64(0xFFUL).shl(64), 13)
+  // 相等键必须命中同一个槽
+  assert_eq(m.get(@types.U256::zero()), Some(10))
+  assert_eq(m.get(@types.U256::one()), Some(11))
+  assert_eq(m.get(@types.U256::max_value()), Some(12))
+  assert_eq(m.get(@types.U256::from_u64(0xFFUL).shl(64)), Some(13))
+  assert_eq(m.length(), 4)
+  // 只差一个 limb 的键不得串味
+  assert_eq(m.get(@types.U256::from_u64(0x1UL).shl(64)), None)
+  assert_eq(m.get(@types.U256::max_value().shr(1)), None)
+  // 覆盖写与删除走同一套哈希
+  m.set(@types.U256::one(), 21)
+  assert_eq(m.get(@types.U256::one()), Some(21))
+  m.remove(@types.U256::one())
+  assert_eq(m.get(@types.U256::one()), None)
+  assert_eq(m.length(), 3)
+}
