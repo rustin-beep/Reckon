@@ -34,7 +34,16 @@ jobs:
           go run . ../../moon.mod
 
   moon:
-    runs-on: ubuntu-latest
+    # 两个 OS：Linux 覆盖 gcc，macOS 覆盖 clang + Apple 的 libc 差异。
+    # Windows 未接线：官方安装脚本在 Windows 上走 `install/powershell.ps1`（与
+    # unix.sh 的版本钉传参方式不同），native 目标还要 cl.exe 在 PATH 上；两者都没
+    # 在真机 CI 上验过，且 `moon fmt` 的漂移检查会碰上本仓既有的 CRLF/LF 债。
+    # 见 AGENTS「工具链」——先在真机上把安装与 MSVC 验通，再并入主门禁。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,12 +75,67 @@ jobs:
           git diff --exit-code
 
       # 注意：`moon test` 不带 --target 时走 moon.mod 的 preferred_target（native），
-      # 三个后端必须显式声明，否则 wasm-gc 实际不会被执行。
+      # 四个后端必须显式声明，否则 wasm-gc 实际不会被执行。
+      # wasm（非 gc、线性内存）原先漏了：它和 wasm-gc 是两条不同的代码生成路径，
+      # 本地实测可跑（211/211），所以在这里补上。
+      #
+      # 每个后端把 `Total tests:` 抄到文件里，下一步比对——否则某个后端「跑了 0 条
+      # 却 exit 0」也能过（这类静默比失败更难发现）。`pipefail` 保证 tee 不会吞掉
+      # 测试的退出码。
       - name: 测试（wasm-gc）
-        run: moon test --target wasm-gc
+        run: |
+          set -o pipefail
+          moon test --target wasm-gc | tee "$RUNNER_TEMP/wasm-gc.log"
+          sed -n 's/^Total tests: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/wasm-gc.log" > "$RUNNER_TEMP/wasm-gc.count"
+
+      - name: 测试（wasm）
+        run: |
+          set -o pipefail
+          moon test --target wasm | tee "$RUNNER_TEMP/wasm.log"
+          sed -n 's/^Total tests: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/wasm.log" > "$RUNNER_TEMP/wasm.count"
 
       - name: 测试（js）
-        run: moon test --target js
+        run: |
+          set -o pipefail
+          moon test --target js | tee "$RUNNER_TEMP/js.log"
+          sed -n 's/^Total tests: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/js.log" > "$RUNNER_TEMP/js.count"
 
       - name: 测试（native）
-        run: moon test --target native
+        run: |
+          set -o pipefail
+          moon test --target native | tee "$RUNNER_TEMP/native.log"
+          sed -n 's/^Total tests: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/native.log" > "$RUNNER_TEMP/native.count"
+
+      - name: 多端测试计数一致
+        run: |
+          set -eu
+          test -s "$RUNNER_TEMP/native.count"
+          test "$(cat "$RUNNER_TEMP/native.count")" -gt 0
+          for t in wasm-gc wasm js; do
+            cmp "$RUNNER_TEMP/native.count" "$RUNNER_TEMP/$t.count"
+          done
+
+      # 多端一致性：同一份 fixture 在四个后端各跑一遍 `reckon statetest`，比对
+      # ① JSON 报告逐字节、② 去掉 CR 之后的 stdout 逐字节。
+      #
+      # 为什么比报告：报告经 `write_string_to_file` 落盘，不做行尾转换，是真正的
+      # 逐字节可比；stdout 在 Windows 上是 CRLF、js/wasm 是 LF（本机实测 native
+      # 输出 `\r\n`、js 输出 `\n`），所以文本先 `tr -d '\r'`。
+      #
+      # 覆盖的是最容易分叉的部分：JSON 序列化（数字形态/转义/键序）、U256 十六进制、
+      # 地址/槽排序与计数。执行正确性不在这一层（executor 仍是 stub）。
+      - name: 多端报告一致性
+        run: |
+          set -eu
+          f=statetest/testdata/one_case.json
+          for t in wasm-gc wasm js native; do
+            moon run cmd/main --target "$t" -- \
+              statetest "$f" --fork Cancun --report "$RUNNER_TEMP/arm.json" \
+              > "$RUNNER_TEMP/$t.txt"
+            cp "$RUNNER_TEMP/arm.json" "$RUNNER_TEMP/$t.json"
+            tr -d '\r' < "$RUNNER_TEMP/$t.txt" > "$RUNNER_TEMP/$t.clean"
+          done
+          for t in wasm-gc wasm js; do
+            cmp "$RUNNER_TEMP/native.json" "$RUNNER_TEMP/$t.json"
+            cmp "$RUNNER_TEMP/native.clean" "$RUNNER_TEMP/$t.clean"
+          done

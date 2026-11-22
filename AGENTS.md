@@ -26,7 +26,8 @@ consensus / MPT。验收语料是 EEST v5.4.0 的 state test，判据是账户�
 
 ```bash
 moon check --target all --deny-warn   # wasm / wasm-gc / js / native，warning 即失败
-moon test --target wasm-gc            # 三后端显式声明；裸 `moon test` 走 preferred_target
+moon test --target wasm-gc            # 四后端显式声明；裸 `moon test` 走 preferred_target
+moon test --target wasm
 moon test --target js                 # （本仓是 native），不能当 wasm-gc 用
 moon test --target native
 moon fmt && moon info                  # 产物由工具链生成，否则 CI 的 git diff 会红
@@ -35,7 +36,11 @@ cd tools/depcheck && go test ./... && go run . ../../moon.mod
 ```
 
 CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依赖闸独立 job →
-装工具链 → `check --target all --deny-warn` → `fmt`/`info` 漂移检查 → 三后端测试。
+装工具链 → `check --target all --deny-warn` → `fmt`/`info` 漂移检查 → **四后端测试 +
+计数一致性** → **多端报告一致性**（同一 fixture 在四后端各出 JSON 报告与 stdout，
+报告逐字节、stdout 去 CR 后逐字节）。矩阵是 **ubuntu-latest + macos-latest**；
+**Windows 未接线**：`install/powershell.ps1` 的版本钉传参、native 需要 `cl.exe`、
+`moon fmt` 会碰上 CRLF/LF 债，三条都未在真机 CI 验过。
 
 ## 4. 工具链
 
@@ -113,6 +118,19 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）顺序相同：依
   `@json.valid` + `parse → stringify` 往返 + 文本断言。
 - 测试里带断言的 helper 要写 `-> Unit raise`：`assert_eq` / `assert_true` 本身是
   raising（`*_test.mbt` 的 `test` 块能接，普通 helper 不能）。
+- **`@env.args()` 在 js 上多一层脚本路径**（0.10.22 实测）：native/wasm/wasm-gc 是
+  `[程序, 子命令, …]`，js 是 `[运行时, 脚本, 子命令, …]`（Node 的 `process.argv` 原样）。
+  CLI 用 `first_arg_index` 判「第二项是否以 `.js` 结尾」来跳；不处理的话
+  `moon run cmd/main --target js -- zzz` 会报 `unknown command '…/main.js'`。
+- **native 的 `println` 在 Windows 上是 CRLF，js/wasm 是 LF**（本机 od 实测：
+  native 行尾 `\r\n`，js `\n`）。所以「跨端逐字节」只对**文件**成立——
+  `write_string_to_file` 不做行尾转换，JSON 报告可以逐字节比；stdout 比对要先
+  `tr -d '\r'`。CI 的「多端报告一致性」就是这么做的。
+- `match` 的 arm 体里若有多条语句（例如 `if … { return … }` 之后再来一个 `return`），
+  必须写成 `Pat => { … }` 带花括号；只写 `Pat =>` 会在第二个 `return` 处报
+  `Parse error, unexpected token return, you may expect simple pattern`。
+- `String::replace_all` 的实参是带标签的：`s.replace_all(old~, new="…")`；写成位置参数
+  报 `The labels old~, new~ are required by this function`，写成 `new~=…` 报语法错误。
 
 ## 7. 工作流
 

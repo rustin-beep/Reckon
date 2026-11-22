@@ -36,7 +36,7 @@ corpus/report landed; the interpreter (P1) has not started.
 | B06 | fixture loader | done：fixture 模型（env/pre/post/transaction/config）、`indexes` 展开、tx 0/1/2/3 解码（EIP-155 与 typed signing hash）、`txbytes` 重签 + sender/recover 校验；`expectException` 的 case 归 `expected_invalid`（不计入 errors、不影响退出码，明细保留细分 class）；5 个真实 fixture 共 158 个 Cancun case 全部 resign ok / sender ok / 0 error |
 | B07 | state model v0 | done：Account/Storage、变更日志（`enum Change`）+ snapshot/revert（嵌套 LIFO、句柄 id 全局唯一故只对产生它的 `State` 有效、失效/异实例句柄报 `InvalidSnapshot`）、canonical `accounts()`（按地址/槽排序、去零槽、去 empty）、账户级 `StateDiff`（before/after 的 `None` 语义）；`U256: Hash`；native 10k 账户下 `accounts()` 12 ms、`diff()`（1000 账户变化）31 ms、`snapshot`+1000 写+`revert` 0.8 ms/轮（debug 构建）。**warm/cold、transient、refund、EIP-6780 未做**，归 C09 |
 | B08 | harness v0 | done：`run_harness(fixtures, fork, execute)`——每个 case 新建 `State`、调用显式执行回调、与 `post.state` 的 canonical 形态做账户级比对（nonce/balance/code/非零槽，8 类 mismatch 分类）、执行后 `State::diff()` 摘要；`expectException` → `skip_expected`、type 4 → `skip_unsupported`；退出码判定收敛成纯函数 `exit_code`（默认 state fail 不红，`--strict` 才红）。真实语料：`test_basic_tload_after_store` fail=1（extra_slot / missing_slot / missing_account / nonce / balance）、`test_invalid_tx_blob_count` skip_expected=2、`CreateOOGFromEOARefunds` 24 个 Cancun case 跑完不崩；两次运行输出逐字节一致 |
-| B09 | corpus/report | done：`reckon statetest <fixture-or-dir>`——目录递归 `*.json`（排序用**字典序**，不用 `String::compare` 的长度优先序）、`--shard <i>/<n>` 确定性分片、`--report <path>` 写 JSON 骨架（corpus tag+commit / fork / format / `executor=stub` / `checks` 三项 `not_checked` / 每文件计数 / totals，整数不带小数点）；多文件模式只出计数行（明细留单文件模式）；退出码走合计版纯函数 `CorpusTotals::exit_code`，与单文件 `exit_code` 有等价性单测。**缺口**：per-precompile-group、三臂 divergence、bench 校验和还没数据，报告里不补零 |
+| B09 | corpus/report | done：`reckon statetest <fixture-or-dir>`——目录递归 `*.json`（排序用**字典序**，不用 `String::compare` 的长度优先序）、`--shard <i>/<n>` 确定性分片、`--report <path>` 写 JSON 骨架（`corpus` tag+commit+**build**、fork、**shard{index,count}**、**strict**、`executor=stub`、`checks` 三项 `not_checked`、每文件计数 + **8 类 mismatch**、totals，整数不带小数点）；**跑不了的文件不中止整批**：`bad_files`（`no_fork` / `unparsable`）计数 + 逐文件诊断，默认不判红、`--strict` 判红；多文件模式只出计数行（明细留单文件模式）；退出码走合计版纯函数 `CorpusTotals::exit_code`，与单文件 `exit_code` 有等价性单测。全树实测（`--fork Cancun`，2,681 文件）：**cases 16,847（= PLAN 分母）**、bad_files 110（全为 no_fork）、unparsable 0、fail 16,283、skip_expected 564、internal 0、tx_errors 0、`txbytes` 覆盖 100%；4 分片并集 = 全集、cases 逐片相加 = 16,847。**缺口**：per-precompile-group、三臂 divergence、bench 校验和还没数据，报告里不补零 |
 
 > **G0（harness 口径）已达成**：加载 → 解码 tx（含 `txbytes` 重签）→ Cancun family
 > 跑完不崩 → 输出账户级 diff 与 pass/fail 计数，报告可复现。
@@ -71,8 +71,9 @@ moonrun 0.1.20261119（与 driver 同 commit `738607b`）。CI pin 在
 否则 `moon check` 会在依赖解析阶段直接失败。
 
 ```bash
-moon check --target all --deny-warn   # 全后端，warning 即失败
-moon test --target wasm-gc            # 三后端都必须显式给 --target
+moon check --target all --deny-warn   # 全后端（wasm / wasm-gc / js / native），warning 即失败
+moon test --target wasm-gc            # 四后端都必须显式给 --target
+moon test --target wasm
 moon test --target js
 moon test --target native
 moon run cmd/main -- --version
@@ -80,10 +81,23 @@ cd tools/depcheck && go test ./... && go run . ../../moon.mod   # R11 依赖白�
 ```
 
 `moon test` 不带 `--target` 时走 `moon.mod` 的 `preferred_target`（本仓是 **native**），
-不是 wasm-gc——三后端要逐一显式声明。
+不是 wasm-gc——四后端要逐一显式声明。
 
 CI 会额外跑 `moon fmt` 与 `moon info`，并要求 `git diff --exit-code` 为空：
 `.mbti` 与格式都由工具链生成，手改即红。
+
+### CI 覆盖面
+
+| 维度 | 现状 |
+|---|---|
+| OS | **ubuntu-latest + macos-latest**（矩阵）。**Windows 未接线**：官方安装脚本在 Windows 上走 `install/powershell.ps1`（版本钉的传参与 `unix.sh` 不同），native 目标还要 `cl.exe` 在 PATH 上，且 `moon fmt` 的漂移检查会碰上本仓既有的 CRLF/LF 债——三条都没在真机 CI 上验过，见 `AGENTS.md`「工具链」 |
+| 后端测试 | `moon test` 逐条跑 **wasm-gc / wasm / js / native**，并把各自的 `Total tests:` 抄下来比对——防止某个后端「跑了 0 条却 exit 0」 |
+| 多端一致性 | 同一份 fixture（`statetest/testdata/one_case.json`）在四个后端各跑一遍 `reckon statetest`，**JSON 报告逐字节**比对 + **stdout 去掉 CR 后逐字节**比对（native 在 Windows 上是 CRLF，js/wasm 是 LF；报告走 `write_string_to_file`，不做行尾转换，所以能真逐字节比） |
+| 未覆盖 | 跨 OS 的 native 行为差异（MSVC vs gcc/clang 只在 Linux/macOS 上跑）、执行正确性（executor 仍是 stub）、EIP-3155 三臂 trace（C15/X05） |
+
+> 口径：「**四后端**」（wasm-gc / wasm / js / native）指**测试覆盖**；「**三臂**」（ADR-3）
+> 仍指 js / wasm-gc / native 三条**性能/差分臂**——`wasm`（线性内存）只做正确性回归，
+> 不是第四臂，也不进 bench。
 
 CI 使用官方安装脚本（`cli.moonbitlang.com/install/unix.sh`）并 pin 版本，不引第三方 action。
 依赖闸用 Go：硬要求只有两条——闸门不能依赖被它守的 MoonBit 工具链（工具链坏过一次，
@@ -128,7 +142,9 @@ moon run cmd/main -- statetest <dir>/state_tests --fork Cancun --shard 1/4
 ```
 
 P0 的 executor 是 stub：`pass=0` 是预期结果，输出里会无条件打印
-`execution=stub (no interpreter; G0 harness only)`；`--strict` 才会因 state mismatch 变红。
+`execution=stub (no interpreter; G0 harness only)`；`--strict` 才会因 state mismatch
+变红，并且要求 `bad_files == 0`（没有任何文件被跳过）。默认下 `bad_files` 只计数与
+打印——用 `--fork Cancun` 扫整棵树必然碰到 pre-Cancun 的 fixture，那是语料结构。
 
 复现命令见 [`PLAN.md`](PLAN.md) 附录 B。
 

@@ -317,3 +317,64 @@ test "run_document without expectException still fails on an invalid v" {
   assert_true(has_error(summary, "class=decode"))
   assert_eq(summary.is_clean(), false)
 }
+
+///|
+/// 把 post entry 的 `txbytes` 整段换掉（`hex` 带 `0x` 前缀）。
+///
+/// 不能用 `with_change(old=low_s_txbytes, ...)`：那个常量没有 `0x` 前缀，替换后
+/// 会得到 `"0x0x04c0"` 这种坏值，测的就不是想测的东西了。
+fn with_txbytes(doc : String, hex : String) -> String {
+  let old = "\"txbytes\": \"0x" + low_s_txbytes + "\""
+  doc.replace_all(old~, new="\"txbytes\": \"" + hex + "\"")
+}
+
+///|
+test "type 4 with expectException counts as expected, not unsupported" {
+  // 7702 的 pre-fork fixture：交易是 type 4（本任务不解码），fixture 同时声明
+  // TYPE_4_TX_PRE_FORK。这条 case 的结论是「该被拒绝」，与 harness 侧的
+  // skip_expected 同向；若还记 unsupported，同一 case 会被两个桶各记一次。
+  let doc = with_expectation(
+    with_txbytes(base_doc(), "0x04c0"),
+    "TransactionException.TYPE_4_TX_PRE_FORK",
+  )
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.cases, 1)
+  assert_eq(summary.unsupported, 0)
+  assert_eq(summary.expected_invalid, 1)
+  assert_eq(summary.error_count, 0)
+  assert_eq(summary.is_clean(), true)
+  // 明细保留 class=unsupported：豁免不等于假装这单 tx 解出来了。
+  assert_eq(summary.expected.length(), 1)
+  assert_true(summary.expected[0].contains("class=unsupported"))
+}
+
+///|
+test "case 级分桶自洽：cases 等于五个桶之和（type 4 + expectException）" {
+  let doc = with_expectation(
+    with_txbytes(base_doc(), "0x04c0"),
+    "TransactionException.TYPE_4_TX_PRE_FORK",
+  )
+  let tx = run_summary(doc, "Cancun")
+  let harness = harness_of(doc, no_op)
+  assert_eq(tx.unsupported, 0)
+  assert_eq(harness.skipped_unsupported, 0)
+  assert_eq(harness.skipped_expected_invalid, 1)
+  assert_eq(
+    harness.cases,
+    harness.pass +
+    harness.fail +
+    harness.skipped_expected_invalid +
+    harness.skipped_unsupported +
+    harness.internal_errors,
+  )
+}
+
+///|
+test "type 4 without expectException is still unsupported" {
+  // 对照组：没有 expectException 的 type 4 必须照实记 unsupported，才谈得上「没做」。
+  let doc = with_txbytes(base_doc(), "0x04c0")
+  let summary = run_summary(doc, "Cancun")
+  assert_eq(summary.unsupported, 1)
+  assert_eq(summary.expected_invalid, 0)
+  assert_eq(summary.is_clean(), false)
+}

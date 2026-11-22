@@ -261,15 +261,14 @@ fn parse_fixture(name : String, root : Json) -> Fixture raise FixtureError {
 }
 
 ///|
-
-///|
 /// `env`。
 ///
-/// `currentRandom` 与 `currentExcessBlobGas` 允许缺失，缺省为零：前者是 merge 之后
-/// 才有的字段（pre-merge fork 只有 `currentDifficulty`），后者是 Cancun 才引入的。
-/// 这两个字段缺失时补零值可以让老 fork 的 fixture 也能加载，而不是整份 parse 失败
-/// ——B06 只跑 Cancun/Prague，但 B09 扫全 corpus 时会碰到 pre-merge 文件。
-/// 其余六个字段（coinbase/gasLimit/number/timestamp/difficulty/baseFee）仍然必需。
+/// `currentRandom` / `currentBaseFee` / `currentExcessBlobGas` 允许缺失，缺省为零：
+/// 分别是 merge 之后、London 之后、Cancun 之后才有的字段。缺失补零让老 fork 的
+/// fixture 也能加载，而不是整份 parse 失败——B06 只跑 Cancun/Prague，但 B09 扫全
+/// corpus 时会碰到 pre-merge / pre-London 文件；实测 58 个只缺 `currentBaseFee`
+/// 的文件里装着 1,508 个 Cancun case（占 Cancun 分母 16,847 的 8.95%），不补零就直接丢掉。
+/// 其余五个字段（coinbase/gasLimit/number/timestamp/difficulty）仍然必需。
 fn parse_env(
   obj : Map[String, Json],
   name : String,
@@ -299,11 +298,7 @@ fn parse_env(
       path,
       "currentDifficulty",
     ),
-    base_fee: as_quantity(
-      field_of(env, path, "currentBaseFee"),
-      path,
-      "currentBaseFee",
-    ),
+    base_fee: parse_env_quantity_or_zero(env, path, "currentBaseFee"),
     excess_blob_gas: parse_env_u64_or_zero(env, path, "currentExcessBlobGas"),
   }
 }
@@ -329,6 +324,19 @@ fn parse_env_u64_or_zero(
   match optional_field(env, field) {
     None => 0UL
     Some(value) => as_u64(value, path, field)
+  }
+}
+
+///|
+/// 数量字段缺失补零（`currentBaseFee`）。存在则必须合法，不吞解析错误。
+fn parse_env_quantity_or_zero(
+  env : Map[String, Json],
+  path : String,
+  field : String,
+) -> @types.U256 raise FixtureError {
+  match optional_field(env, field) {
+    None => @types.U256::zero()
+    Some(value) => as_quantity(value, path, field)
   }
 }
 

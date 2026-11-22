@@ -32,7 +32,7 @@ pub fn parse_document(String) -> Array[Fixture] raise FixtureError
 
 pub fn recover_sender(DecodedTx) -> @types.Address?
 
-pub fn report_json(String, Array[FileReport]) -> String
+pub fn report_json(ReportOptions, Array[FileReport]) -> String
 
 pub fn resign(DecodedTx, BytesView, @types.U256) -> ResignOutcome
 
@@ -106,6 +106,15 @@ pub fn Alloc::length(Self) -> Int32
 pub fn Alloc::lookup(Self, @types.Address) -> AccountAlloc?
 
 #derive(@debug.Debug)
+pub(all) enum BadFile {
+  NoFork
+  Unparsable
+}
+pub fn BadFile::output(Self, &Logger) -> Unit
+pub fn BadFile::to_string(Self) -> String
+pub impl Show for BadFile
+
+#derive(@debug.Debug)
 pub(all) struct BlockEnv {
   coinbase : @types.Address
   gas_limit : UInt64
@@ -157,10 +166,13 @@ pub fn CompareReport::is_match(Self) -> Bool
 #derive(@debug.Debug)
 pub(all) struct CorpusTotals {
   files : Int32
+  bad_files : Int32
+  no_fork_files : Int32
+  unparsable_files : Int32
   cases : Int32
   tx_errors : Int32
   resign_mismatches : Int32
-  unsupported : Int32
+  tx_unsupported : Int32
   txbytes_present : Int32
   txbytes_missing : Int32
   expected_invalid : Int32
@@ -169,6 +181,14 @@ pub(all) struct CorpusTotals {
   skip_expected : Int32
   skip_unsupported : Int32
   internal_errors : Int32
+  missing_accounts : Int32
+  extra_accounts : Int32
+  nonce_mismatches : Int32
+  balance_mismatches : Int32
+  code_mismatches : Int32
+  missing_slots : Int32
+  extra_slots : Int32
+  slot_value_mismatches : Int32
 }
 pub fn CorpusTotals::add(Self, FileReport) -> Self
 pub fn CorpusTotals::exit_code(Self, Bool) -> Int32
@@ -203,10 +223,12 @@ pub fn DecodedTx::unsigned_item(Self) -> @rlp.Item
 #derive(@debug.Debug)
 pub(all) struct FileReport {
   path : String
+  bad : BadFile?
+  detail : String
   cases : Int32
   tx_errors : Int32
   resign_mismatches : Int32
-  unsupported : Int32
+  tx_unsupported : Int32
   txbytes_present : Int32
   txbytes_missing : Int32
   expected_invalid : Int32
@@ -215,8 +237,17 @@ pub(all) struct FileReport {
   skip_expected : Int32
   skip_unsupported : Int32
   internal_errors : Int32
+  missing_accounts : Int32
+  extra_accounts : Int32
+  nonce_mismatches : Int32
+  balance_mismatches : Int32
+  code_mismatches : Int32
+  missing_slots : Int32
+  extra_slots : Int32
+  slot_value_mismatches : Int32
 }
 pub fn FileReport::of(String, Summary, HarnessSummary) -> Self
+pub fn FileReport::skipped(String, BadFile, String) -> Self
 
 #derive(@debug.Debug)
 pub(all) struct Fixture {
@@ -297,6 +328,15 @@ pub(all) struct PostEntry {
   indexes : Indexes
   expect_exception : Array[String]
 }
+
+#derive(@debug.Debug)
+pub(all) struct ReportOptions {
+  fork : String
+  shard_index : Int32
+  shard_count : Int32
+  strict : Bool
+}
+pub fn ReportOptions::new(String) -> Self
 
 pub(all) enum ResignOutcome {
   Ok

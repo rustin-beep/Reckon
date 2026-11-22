@@ -174,6 +174,82 @@
     `{eip4844_blobs}`（index 1），两片不重不漏。
   - 同参数两次运行 stdout 与报告逐字节相同；`--strict` → exit 1；空目录 / 坏分片 → exit 2。
 
+### 修复（B09 审阅：语料通路）
+
+真实语料（EEST stable 全树 2,681 文件）实测出来的四类问题，按「先能跑，再能读」的顺序修。
+
+- **目录模式不再整批中止**（P1）：任一文件 parse 失败或没有目标 fork，原先直接
+  `exit 2`，全语料一条 `totals` 都出不来。现在降级为**逐文件跳过**：`bad_files`
+  计数（`no_fork` = 文档没有目标 fork，`unparsable` = 连模型都读不出来），打一行
+  `bad=<kind> file=<rel> <detail>` 诊断，继续扫描；报告里每个跳过的文件都有
+  `"bad"` 与 `"detail"`。默认退出码不受 `bad_files` 影响（老 fork 的 fixture 属语料
+  结构），`--strict` 下 `bad_files > 0` 判红（证据要完整）。IO 真失败仍 `exit 2`，
+  并打印 `incomplete=1`——已输出的 `file=` 行不完整，不能当成一次完整扫描。
+- **`currentBaseFee` 缺失补零**（P1）：与 `currentRandom` / `currentExcessBlobGas`
+  同口径（London 之前没有 baseFee）。实测 58 个文件**只缺这一个字段**、里面装着
+  **1,508 个 Cancun case**（分母 16,847 的 8.95%）。修后全语料 Cancun `cases`
+  从 15,339 变成 **16,847**，正好是 PLAN §0 的分母；`unparsable` 清零。
+  给了坏值仍然报 `HexInvalid`，不吞解析错误（有测试）。
+- **skip 优先级两条流水线统一**（P2）：`run.mbt` 原先先判 `UnsupportedType` 再看
+  `expectException`，与 harness 侧相反。后果是同一 case 在 `unsupported` 与
+  `skip_expected` 两个桶各记一次（`totals` 的 case 级相加 15,341 > cases 15,339），
+  且 2 个 `TYPE_4_TX_PRE_FORK` case 把全语料 `unsupported > 0` 打进 exit 1。
+  现在 tx 侧也先看 `expectException`，命中即记 `expected_invalid`（明细保留
+  `class=unsupported`）；报告里该列改名 `tx_unsupported`，与 harness 侧的
+  `skip_unsupported` 明确区分维度。复验：`test_set_code_type_tx_pre_fork.json`
+  由 `unsupported:2 + skip_expected:2 + exit 1` 变为 `tx_unsupported:0 +
+  skip_expected:2 + exit 0`。
+- **报告补齐 G1 归因维度**（P2）：`FileReport` / `CorpusTotals` / `report_json`
+  搬上 8 类 mismatch 计数（`missing_accounts` … `slot_value_mismatches`），
+  文本输出加一行 `mismatch=`；报告顶层加 `shard {index, count}`、`strict`、
+  `corpus.build = stable`——1/4 分片的报告与全量报告不再长得一样。
+- **输入校验与文案**（P3）：`parse_digits` 加溢出检查（`--shard 4294967297/4`
+  原先静默回绕成 `1/4`，现在 `exit 2`）；单文件参数配 `--shard` 直接报用法错误（原先
+  静默忽略）；`--report` 不许落在扫描树内或与被测文件同路径（先读后写，会覆盖语料、
+  也会被下一次扫描当成 fixture）；`run`/`trace`/`bench` 的占位提示指向
+  `P1 C01-C13 / C15 / X01`（原先错指 P0 B07-B08）；删掉 `corpus.mbt` 里删段残留的
+  空分隔注释。
+- 测试：新增 7 条（`baseFee` 缺失/坏值、type 4 + `expectException` 的三条分桶断言、
+  `bad_files` 的合计与 `--strict` 行为、报告里的 8 类计数与 `bad` 字段），三后端 **211/211**；`FileReport` 的 8 类
+  计数、`bad_files` 拆分、报告新字段都有断言。
+- 实测（全树 `--fork Cancun`，2,681 文件）：`totals=files:2681 bad_files:110
+  no_fork:110 unparsable:0 cases:16847 pass:0 fail:16283 skip_expected:564
+  internal_errors:0 tx_errors:0 resign_mismatch:0 tx_unsupported:0
+  txbytes_present:16847`；`mismatch=missing_accounts:13490 extra_accounts:30
+  nonce:17059 balance:20991 code:1 missing_slots:20731 extra_slots:4604
+  slot_values:4406`；debug 构建耗时 4 分 10 秒。`--shard i/4` 四片并集 = 全集、
+  cases 逐片相加 = 16,847、无重复。
+
+### 变更（CI：四后端与多端一致性）
+
+- **CI 矩阵从单 OS 扩到 `ubuntu-latest` + `macos-latest`**（`fail-fast: false`）。
+  macOS 走同一个官方 `unix.sh` 与同一套命令，只是换 clang/libc。
+- **补上 `moon test --target wasm`**：原先只跑 wasm-gc / js / native，漏了线性内存
+  这条代码生成路径。本机实测 211/211 通过，CI 直接接上。
+- **四后端测试计数一致性**：每个后端的 `Total tests:` 抄到文件再 `cmp`，防止
+  「某个后端跑了 0 条却 exit 0」这种静默（`set -o pipefail` 保证 `tee` 不吞退出码）。
+- **多端报告一致性**（这条是「多端对比」的落地）：新增合成 fixture
+  `statetest/testdata/one_case.json`（2 个 case：一条正常比对、一条 `expectException`
+  走 skip），四个后端各跑一遍 `reckon statetest … --report`，比对
+  ① JSON 报告**逐字节**、② stdout **去 CR 后逐字节**。
+  为什么不直接比 stdout：本机 od 实测 native 在 Windows 上输出 `\r\n`、js/wasm 输出
+  `\n`；而报告经 `write_string_to_file` 落盘不做行尾转换，是真正可逐字节比的产物。
+  本机四臂实测：报告与（去 CR 后的）stdout 全部逐字节一致。
+- **修复：`@env.args()` 在 js 上多一层脚本路径**——native/wasm 是 `[程序, 子命令, …]`，
+  js 是 `[运行时, 脚本, 子命令, …]`（Node 的 `process.argv` 原样）。原先
+  `moon run cmd/main --target js -- --version` 会把 `main.js` 当成子命令报
+  `unknown command '…/main.js'`。现在 `first_arg_index` 按「第二项是否 `.js`」跳一格，
+  js 上 `--version` / `statetest` 都正常。
+- **Windows 仍未接线**，三条硬理由（不是遗漏）：① 官方安装脚本在 Windows 上走
+  `install/powershell.ps1`，版本钉的传参与 `unix.sh` 的 `-s <version>` 不同，未验过；
+  ② `native` 目标需要 `cl.exe` 在 PATH，`windows-latest` 默认没有 VS 开发者环境；
+  ③ `moon fmt` 的 `git diff --exit-code` 会碰上本仓既有的 CRLF/LF 债（HEAD 里已有
+  CRLF blob）。先在真机把这三条验通再并入主门禁，见 `AGENTS.md`「工具链」。
+- 测试：四后端 **211/211**；`check --target all --deny-warn` 0 error / 0 warning；
+  depcheck ok。CI 的全部命令（除 macOS/Windows 专属部分）都在本机按同一顺序跑过。
+
+
+
 ### 修复（B07 审阅）
 
 - **`Snapshot` 不绑定 `State` 实例，跨实例混用会静默损坏状态**（P2）：句柄只存

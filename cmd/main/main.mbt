@@ -43,13 +43,16 @@ fn usage_error(message : String) -> Unit {
 ///|
 fn main {
   let args = @env.args()
-  let cmd = if args.length() > 1 { args[1] } else { "" }
+  let first = first_arg_index(args)
+  let cmd = if args.length() > first { args[first] } else { "" }
   match cmd {
     "" | "help" | "--help" | "-h" => usage()
     "--version" | "-V" => println("reckon \{version}")
-    "statetest" => run_statetest(args)
+    "statetest" => run_statetest(args, first + 1)
     "run" | "trace" | "bench" => {
-      println("reckon \{cmd}: not implemented yet (see PLAN.md P0 B07-B08)")
+      println(
+        "reckon \{cmd}: not implemented yet (run: P1 C01-C13; trace: C15; bench: X01)",
+      )
       @env.exit(2)
     }
     _ => {
@@ -60,19 +63,35 @@ fn main {
   }
 }
 
+///|
+/// 子命令在 `args` 里的下标。
+///
+/// native / wasm / wasm-gc 的 `@env.args()` 是 `[程序, 子命令, …]`；js 上是
+/// `[运行时, 脚本, 子命令, …]`（Node 的 `process.argv` 原样透传），因此 js 要多跳
+/// 一个 `main.js`。实测：`moon run cmd/main --target js -- zzz` 会把脚本路径当成
+/// 子命令报 `unknown command '…/main.js'`。判据只看「第二项是否以 .js 结尾」——
+/// 子命令名不可能是 .js 文件。
+fn first_arg_index(args : Array[String]) -> Int32 {
+  if args.length() > 1 && args[1].has_suffix(".js") {
+    2
+  } else {
+    1
+  }
+}
+
 // ---------------------------------------------------------------------------
 // statetest
 // ---------------------------------------------------------------------------
 
 ///|
-fn run_statetest(args : Array[String]) -> Unit {
+fn run_statetest(args : Array[String], first : Int32) -> Unit {
   let mut path = ""
   let mut fork = "Cancun"
   let mut strict = false
   let mut shard = 0
   let mut shards = 1
   let mut report_path = ""
-  let mut i = 2
+  let mut i = first
   let mut bad = false
   while i < args.length() && !bad {
     let arg = args[i]
@@ -141,6 +160,18 @@ fn run_statetest(args : Array[String]) -> Unit {
   }
   // 目录（递归 *.json）或单文件：目录遍历只在这里做，`statetest` 库不碰文件系统。
   let directory = @fs.is_dir(path) catch { _ => false }
+  if shards > 1 && !directory {
+    usage_error("--shard only applies to a directory of fixtures")
+    @env.exit(2)
+    return
+  }
+  if report_path != "" && report_conflicts(report_path, path, directory) {
+    usage_error(
+      "--report must not point at or inside the scanned fixtures (it would be read as a fixture next run)",
+    )
+    @env.exit(2)
+    return
+  }
   let items : Array[(String, String)] = []
   if directory {
     let rels : Array[String] = []
@@ -168,43 +199,63 @@ fn run_statetest(args : Array[String]) -> Unit {
   if corpus_mode {
     println("files=\{items.length()}")
     println("fork=\{fork}")
-    if shards > 1 {
-      println("shard=\{shard}/\{shards}")
-    }
+    println("shard=\{shard}/\{shards}")
+    println("strict=\{strict}")
     print_stub_banner()
   }
   let rows : Array[@statetest.FileReport] = []
   for (absolute, relative) in items {
-    let text = @fs.read_file_to_string(absolute) catch {
+    let outcome = run_file(absolute, fork) catch {
       @fs.IOError(message) => {
         println("reckon statetest: cannot read \{absolute}: \{message}")
-        @env.exit(2)
-      }
-    }
-    let fixtures = @statetest.parse_document(text) catch {
-      e => {
-        println("reckon statetest: \{absolute}: \{e.to_string()}")
-        @env.exit(2)
-        return
-      }
-    }
-    let summary = @statetest.run_document(fixtures, fork) catch {
-      e => {
-        println("reckon statetest: \{absolute}: \{e.to_string()}")
+        if corpus_mode {
+          // IO 失败是真的中止（不是「这个文件跳过」）：已打印的 file= 行不完整，
+          // 必须标注，否则读者会把它当成一次完整的语料扫描。
+          println(
+            "incomplete=1 (aborted on IO error; the file= lines above are partial)",
+          )
+        }
         @env.exit(2)
         return
       }
     }
-    // harness v0：executor 是 no-op（P0 没有 interpreter），所以先跑 tx 流水线再比对。
-    let harness = @statetest.run_harness(fixtures, fork, fn(_case, _state) {
-      ()
-    })
-    rows.push(@statetest.FileReport::of(relative, summary, harness))
-    if corpus_mode {
-      print_file_row(relative, summary, harness)
-    } else {
-      print_summary(absolute, fork, summary)
-      print_harness(harness)
+    match outcome {
+      Ran(summary, harness) => {
+        rows.push(@statetest.FileReport::of(relative, summary, harness))
+        if corpus_mode {
+          print_file_row(relative, summary, harness)
+        } else {
+          print_summary(absolute, fork, summary)
+          print_harness(harness)
+        }
+      }
+      SkippedNoFork(detail) =>
+        if corpus_mode {
+          // 老 fork 的 fixture 没有目标 fork：跳过并计数，不中断整批。
+          rows.push(
+            @statetest.FileReport::skipped(relative, @statetest.NoFork, detail),
+          )
+          println("bad=no_fork file=\{relative} \{detail}")
+        } else {
+          println("reckon statetest: \{absolute}: \{detail}")
+          @env.exit(2)
+          return
+        }
+      SkippedUnparsable(detail) =>
+        if corpus_mode {
+          rows.push(
+            @statetest.FileReport::skipped(
+              relative,
+              @statetest.Unparsable,
+              detail,
+            ),
+          )
+          println("bad=parse file=\{relative} \{detail}")
+        } else {
+          println("reckon statetest: \{absolute}: \{detail}")
+          @env.exit(2)
+          return
+        }
     }
   }
   let totals = @statetest.totals_of(rows)
@@ -212,7 +263,13 @@ fn run_statetest(args : Array[String]) -> Unit {
     print_totals(totals)
   }
   if report_path != "" {
-    let text = @statetest.report_json(fork, rows) + "\n"
+    let options = {
+      ..@statetest.ReportOptions::new(fork),
+      shard_index: shard,
+      shard_count: shards,
+      strict,
+    }
+    let text = @statetest.report_json(options, rows) + "\n"
     @fs.write_string_to_file(report_path, text) catch {
       @fs.IOError(message) => {
         println("reckon statetest: cannot write \{report_path}: \{message}")
@@ -223,6 +280,50 @@ fn run_statetest(args : Array[String]) -> Unit {
   }
   // 退出码判定是 `statetest` 里的纯函数（合计版与单文件版等价，已单测）。
   @env.exit(totals.exit_code(strict))
+}
+
+///|
+/// 单文件的三种结局。`run_document` 在文档级只抛 `ForkNotFound`（case 级失败进
+/// errors 桶），所以「没有目标 fork」与「读不出来」能干净地分开。
+priv enum FileOutcome {
+  Ran(@statetest.Summary, @statetest.HarnessSummary)
+  /// 文档能解析，但 `post` 里没有目标 fork。
+  SkippedNoFork(String)
+  /// 连 JSON / fixture 模型都读不出来。
+  SkippedUnparsable(String)
+}
+
+///|
+fn run_file(absolute : String, fork : String) -> FileOutcome raise @fs.IOError {
+  let text = @fs.read_file_to_string(absolute)
+  let fixtures = @statetest.parse_document(text) catch {
+    e => return SkippedUnparsable(e.to_string())
+  }
+  let summary = @statetest.run_document(fixtures, fork) catch {
+    e => return SkippedNoFork(e.to_string())
+  }
+  // harness v0：executor 是 no-op（P0 没有 interpreter），所以先跑 tx 流水线再比对。
+  let harness = @statetest.run_harness(fixtures, fork, fn(_case, _state) { () })
+  Ran(summary, harness)
+}
+
+///|
+/// `--report` 不能落在输入里：写进扫描树既可能覆盖 fixture，也会让下一次扫描
+/// 把它当成语料。单文件模式只挡完全相同的路径。
+fn report_conflicts(report : String, root : String, directory : Bool) -> Bool {
+  if !directory {
+    return report == root
+  }
+  report.has_prefix(trim_trailing_slash(root) + "/")
+}
+
+///|
+fn trim_trailing_slash(path : String) -> String {
+  let mut end = path.length()
+  while end > 1 && (path[end - 1] == '/' || path[end - 1] == '\\') {
+    end = end - 1
+  }
+  path[:end].to_owned()
 }
 
 ///|
@@ -289,6 +390,14 @@ fn parse_digits(text : StringView) -> Int32? {
   for i in 0..<text.length() {
     let digit = text[i].to_int() - 48
     if digit < 0 || digit > 9 {
+      return None
+    }
+    // 2147483647 / 10 = 214748364 余 7：先查乘 10 会不会溢出，再加个位。
+    // 不查的话 `--shard 4294967297/4` 会静默回绕成 `1/4`。
+    if value > 214748364 {
+      return None
+    }
+    if value == 214748364 && digit > 7 {
       return None
     }
     value = value * 10 + digit
@@ -391,14 +500,19 @@ fn print_file_row(
 ) -> Unit {
   let row = @statetest.FileReport::of(path, summary, harness)
   println(
-    "file=\{row.path} cases:\{row.cases} tx_errors:\{row.tx_errors} resign_mismatch:\{row.resign_mismatches} unsupported:\{row.unsupported} txbytes_present:\{row.txbytes_present} txbytes_missing:\{row.txbytes_missing} expected_invalid:\{row.expected_invalid} pass:\{row.pass} fail:\{row.fail} skip_expected:\{row.skip_expected} skip_unsupported:\{row.skip_unsupported} internal_errors:\{row.internal_errors}",
+    "file=\{row.path} cases:\{row.cases} pass:\{row.pass} fail:\{row.fail} skip_expected:\{row.skip_expected} skip_unsupported:\{row.skip_unsupported} internal_errors:\{row.internal_errors} tx_errors:\{row.tx_errors} resign_mismatch:\{row.resign_mismatches} tx_unsupported:\{row.tx_unsupported} txbytes_present:\{row.txbytes_present} txbytes_missing:\{row.txbytes_missing} expected_invalid:\{row.expected_invalid}",
   )
 }
 
 ///|
-/// 合计行。字段与 `--report` 的 `totals` 一致，便于人和脚本对读。
+/// 合计行，分两行：
+///   - `totals=`：文件 / case 级（含 `bad_files` 的三种口径）；
+///   - `mismatch=`：字段 / 槽级八类分布——G1 要「逐条归因」，这是最小必需维度。
 fn print_totals(totals : @statetest.CorpusTotals) -> Unit {
   println(
-    "totals=files:\{totals.files} cases:\{totals.cases} tx_errors:\{totals.tx_errors} resign_mismatch:\{totals.resign_mismatches} unsupported:\{totals.unsupported} txbytes_present:\{totals.txbytes_present} txbytes_missing:\{totals.txbytes_missing} expected_invalid:\{totals.expected_invalid} pass:\{totals.pass} fail:\{totals.fail} skip_expected:\{totals.skip_expected} skip_unsupported:\{totals.skip_unsupported} internal_errors:\{totals.internal_errors}",
+    "totals=files:\{totals.files} bad_files:\{totals.bad_files} no_fork:\{totals.no_fork_files} unparsable:\{totals.unparsable_files} cases:\{totals.cases} pass:\{totals.pass} fail:\{totals.fail} skip_expected:\{totals.skip_expected} skip_unsupported:\{totals.skip_unsupported} internal_errors:\{totals.internal_errors} tx_errors:\{totals.tx_errors} resign_mismatch:\{totals.resign_mismatches} tx_unsupported:\{totals.tx_unsupported} txbytes_present:\{totals.txbytes_present} txbytes_missing:\{totals.txbytes_missing} expected_invalid:\{totals.expected_invalid}",
+  )
+  println(
+    "mismatch=missing_accounts:\{totals.missing_accounts} extra_accounts:\{totals.extra_accounts} nonce:\{totals.nonce_mismatches} balance:\{totals.balance_mismatches} code:\{totals.code_mismatches} missing_slots:\{totals.missing_slots} extra_slots:\{totals.extra_slots} slot_values:\{totals.slot_value_mismatches}",
   )
 }

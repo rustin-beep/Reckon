@@ -279,7 +279,9 @@ fn count_type(summary : Summary, tx_type : TxType) -> Summary {
 ///
 /// `has_expectation`（fixture 声明了 `expectException`）决定失败落到哪个桶：
 /// decode / fields / recover / resign 四类不一致在声明异常时一律算预期失败，
-/// 但仍按原 class 记明细，便于审计。`sender` 不一致不豁免——那是 fixture 自身
+/// 但仍按原 class 记明细，便于审计。type 4（`UnsupportedType`）同样先看
+/// `has_expectation`——声明了异常就记预期失败，没声明才记 `unsupported`，
+/// 与 harness 侧的 skip 优先级一致。`sender` 不一致不豁免——那是 fixture 自身
 /// 矛盾（`secretKey` 推不出 `sender`），与「这笔交易该被拒绝」无关。
 fn run_case(fixture : Fixture, case : Case, summary : Summary) -> Summary {
   let mut s = summary
@@ -298,9 +300,18 @@ fn run_case(fixture : Fixture, case : Case, summary : Summary) -> Summary {
     e => Failed(e)
   }
   let tx = match decoded {
-    Failed(UnsupportedType(_)) =>
-      // type 4 是「没做」，不是「预期被拒绝」：即使 fixture 声明了异常，也照实计数。
+    Failed(UnsupportedType(_)) => {
+      // type 4 是「没做」。但 fixture 若同时声明了 expectException，这条 case 的
+      // 结论就已经是「该被拒绝」——与 harness 侧「expectException 优先」保持同一
+      // 方向，否则同一个 case 会在 unsupported 与 skip_expected 两个桶里各记一次，
+      // totals 的 case 级计数就会大于 cases。
+      if has_expectation {
+        return push_expected(
+          s, case, "unsupported", "type 4 (EIP-7702) is not supported yet; the case declares expectException",
+        )
+      }
       return { ..s, unsupported: s.unsupported + 1, }
+    }
     Failed(e) =>
       if has_expectation {
         return push_expected(s, case, "decode", e.to_string())

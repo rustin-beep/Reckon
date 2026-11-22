@@ -1,0 +1,66 @@
+{
+  "tests/synthetic/one_case.py::test_one[fork_Cancun-state_test]": {
+    "config": {"chainid": "0x01", "blobSchedule": {"Cancun": {"target": "0x03"}}},
+    "env": {
+      "currentCoinbase": "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba",
+      "currentGasLimit": "0x07270e00",
+      "currentNumber": "0x01",
+      "currentTimestamp": "0x03e8",
+      "currentRandom": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "currentDifficulty": "0x00",
+      "currentBaseFee": "0x07",
+      "currentExcessBlobGas": "0x00"
+    },
+    "pre": {
+      "0x766b923079c2900993bafa89b07d66423481776e": {
+        "nonce": "0x00",
+        "balance": "0x6124fee993bc0000",
+        "code": "0x",
+        "storage": {}
+      },
+      "0x1ad41edb9130201ba8476168bcbf9bafe279f89d": {
+        "nonce": "0x01",
+        "balance": "0x00",
+        "code": "0x5b601660015560015c600155",
+        "storage": {"0x01": "0xff"}
+      }
+    },
+    "transaction": {
+      "nonce": "0x00",
+      "gasPrice": "0x0a",
+      "gasLimit": ["0x4c4b40"],
+      "to": "0x1ad41edb9130201ba8476168bcbf9bafe279f89d",
+      "value": ["0x00"],
+      "data": ["0x"],
+      "sender": "0x766b923079c2900993bafa89b07d66423481776e",
+      "secretKey": "0xf792f84d3860ff35b56caae61ad41edb9130201ba8476168bcbf9bafe279f89d"
+    },
+    "post": {
+      "Cancun": [
+        {
+          "hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "logs": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "indexes": {"data": 0, "gas": 0, "value": 0},
+          "state": {
+            "0x766b923079c2900993bafa89b07d66423481776e": {
+              "nonce": "0x01", "balance": "0x6124fee993b55c0a", "code": "0x", "storage": {}
+            }
+          },
+          "txbytes": "0xf860800a834c4b40941ad41edb9130201ba8476168bcbf9bafe279f89d808025a049c30c1716544ca6c1960a201ca2c2e6f829510cbe85a663508c3b8499a318faa03336582b5cf99b9d55854927decda7f8db1b2703684aee01c4be9c80b2a108c0"
+        },
+        {
+          "hash": "0x0000000000000000000000000000000000000000000000000000000000000003",
+          "logs": "0x0000000000000000000000000000000000000000000000000000000000000004",
+          "indexes": {"data": 0, "gas": 0, "value": 0},
+          "state": {
+            "0x766b923079c2900993bafa89b07d66423481776e": {
+              "nonce": "0x01", "balance": "0x6124fee993b55c0a", "code": "0x", "storage": {}
+            }
+          },
+          "expectException": "TransactionException.INVALID_SIGNATURE",
+          "txbytes": "0xf860800a834c4b40941ad41edb9130201ba8476168bcbf9bafe279f89d808025a049c30c1716544ca6c1960a201ca2c2e6f829510cbe85a663508c3b8499a318faa03336582b5cf99b9d55854927decda7f8db1b2703684aee01c4be9c80b2a108c0"
+        }
+      ]
+    }
+  }
+}

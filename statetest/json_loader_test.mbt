@@ -525,3 +525,27 @@ test "loader tolerates missing currentRandom and currentExcessBlobGas" {
     None => abort("expected FieldMissing, got Ok")
   }
 }
+
+///|
+test "loader tolerates a missing currentBaseFee" {
+  // London 之前没有 baseFee。实测语料里 58 个文件只缺这一个字段，里面装着
+  // 1,508 个 Cancun case（Cancun 分母 16,847 的 8.95%）；不补零就整份 parse 失败。
+  let doc = with_change(old="  \"currentBaseFee\": \"0x07\",\n", new="")
+  let fixtures = @statetest.parse_document(doc)
+  assert_true(fixtures[0].env.base_fee.is_zero())
+}
+
+///|
+test "loader still rejects an invalid currentBaseFee" {
+  // 缺失补零，但「给了坏值」不能吞：否则非法 fixture 会静默变成 baseFee=0。
+  let doc = with_change(
+    old="\"currentBaseFee\": \"0x07\"",
+    new="\"currentBaseFee\": \"0xzz\"",
+  )
+  match expect_parse_error(doc) {
+    Some(@statetest.HexInvalid(field~, ..)) =>
+      assert_eq(field, "currentBaseFee")
+    Some(other) => abort("expected HexInvalid, got \{other.to_string()}")
+    None => abort("expected HexInvalid, got Ok")
+  }
+}

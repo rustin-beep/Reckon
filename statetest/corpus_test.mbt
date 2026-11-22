@@ -5,7 +5,8 @@
 //     （既证明语法合法，也证明格式稳定、转义可逆）；
 //   - 键值与整数形态按渲染文本钉住（`"cases": 3` 而不是 `3.0`）；
 //   - 同一输入两次 `report_json` 逐字节一致；
-//   - 合计版退出码与单文件 `exit_code` 逐一等价（两套判据不许打架）。
+//   - 合计版退出码与单文件 `exit_code` 逐一等价（两套判据不许打架）；
+//   - 「跑不了的文件」单独计数，且 `--strict` 下会把覆盖缺口判红。
 //
 // 不在测试里用 `Map[String, @json.Json]`：本机 moonc 0.10.22 在 blackbox test 包里
 // 只要把该类型写进签名（`as_object()` / `Json::value()`）就段错误、且不给诊断。
@@ -21,6 +22,7 @@ fn assert_paths(actual : Array[String], expected : Array[String]) -> Unit raise 
 }
 
 ///|
+/// 一个「跑通了」的文件行：其余计数留零，只按需覆写。
 fn row_of(
   path : String,
   cases : Int32,
@@ -28,19 +30,12 @@ fn row_of(
   fail : Int32,
 ) -> @statetest.FileReport {
   {
-    path,
+    ..@statetest.FileReport::skipped(path, @statetest.Unparsable, ""),
+    bad: None,
     cases,
-    tx_errors: 0,
-    resign_mismatches: 0,
-    unsupported: 0,
-    txbytes_present: cases,
-    txbytes_missing: 0,
-    expected_invalid: pass,
     pass,
     fail,
-    skip_expected: 0,
-    skip_unsupported: 0,
-    internal_errors: 0,
+    txbytes_present: cases,
   }
 }
 
@@ -78,7 +73,7 @@ test "shard_pick 按排序结果均分且不重不漏" {
 test "shard_pick 用字典序，不是 String::compare 的长度优先序" {
   // 实测 MoonBit 0.10.22 的 `String::Compare` 长度优先（`"ab".compare("b") == 1`），
   // 直接 `sort()` 会把 `static/z.json` 排到 `cancun/...` 前面。报告的文件序
-  // 必须是字典序，这条测试就是防回归的那一颗钉子。
+  // 必须是字典序，这条测试就是防回归的那颗钉子。
   assert_paths(@statetest.shard_pick(["b.json", "aa.json"], 0, 1), [
     "aa.json", "b.json",
   ])
@@ -114,12 +109,17 @@ test "shard_pick 不改动调用方数组" {
 // ---------------------------------------------------------------------------
 
 ///|
-test "totals_of 把每个文件的计数逐项相加" {
+test "totals_of 把每个文件的计数逐项相加，并分开统计跳过的文件" {
   let totals = @statetest.totals_of([
     row_of("a.json", 3, 1, 2),
     row_of("b.json", 4, 0, 4),
+    @statetest.FileReport::skipped("c.json", @statetest.NoFork, "no Cancun"),
+    @statetest.FileReport::skipped("d.json", @statetest.Unparsable, "bad hex"),
   ])
-  assert_eq(totals.files, 2)
+  assert_eq(totals.files, 4)
+  assert_eq(totals.bad_files, 2)
+  assert_eq(totals.no_fork_files, 1)
+  assert_eq(totals.unparsable_files, 1)
   assert_eq(totals.cases, 7)
   assert_eq(totals.pass, 1)
   assert_eq(totals.fail, 6)
@@ -128,7 +128,7 @@ test "totals_of 把每个文件的计数逐项相加" {
 }
 
 ///|
-test "FileReport::of 摘出的 cases 与 harness 的 cases 一致" {
+test "FileReport::of 摘出的 cases 与 harness 的 cases 一致，并搬 8 类 mismatch" {
   let doc = base_doc()
   let tx = tx_summary_of(doc)
   let harness = harness_of(doc, no_op)
@@ -140,6 +140,17 @@ test "FileReport::of 摘出的 cases 与 harness 的 cases 一致" {
   assert_eq(row.tx_errors, 0)
   assert_eq(row.txbytes_present, 1)
   assert_eq(row.expected_invalid, 0)
+  // base_doc 的 stub 差值：多一个合约账户、sender 的 nonce 与余额各差一处。
+  assert_eq(row.extra_accounts, 1)
+  assert_eq(row.nonce_mismatches, 1)
+  assert_eq(row.balance_mismatches, 1)
+  assert_eq(row.code_mismatches, 0)
+  assert_eq(row.missing_accounts, 0)
+  // 合计里也要带上这 8 个数——G1 归因靠它。
+  let totals = @statetest.totals_of([row])
+  assert_eq(totals.extra_accounts, 1)
+  assert_eq(totals.nonce_mismatches, 1)
+  assert_eq(totals.balance_mismatches, 1)
 }
 
 ///|
@@ -173,10 +184,10 @@ test "合计版退出码与单文件 exit_code 等价（tx 不干净）" {
 }
 
 ///|
-test "合计版退出码：internal / unsupported / resign 各自都红" {
+test "合计版退出码：internal / tx_unsupported / resign 各自都红" {
   let internal = { ..@statetest.CorpusTotals::new(), internal_errors: 1, }
   assert_eq(internal.exit_code(false), 1)
-  let unsupported = { ..@statetest.CorpusTotals::new(), unsupported: 1, }
+  let unsupported = { ..@statetest.CorpusTotals::new(), tx_unsupported: 1, }
   assert_eq(unsupported.exit_code(false), 1)
   let resign = { ..@statetest.CorpusTotals::new(), resign_mismatches: 1, }
   assert_eq(resign.exit_code(false), 1)
@@ -185,20 +196,55 @@ test "合计版退出码：internal / unsupported / resign 各自都红" {
   assert_eq(only_fail.exit_code(true), 1)
 }
 
+///|
+test "合计版退出码：跳过的文件默认不红，--strict 下红" {
+  let totals = @statetest.totals_of([
+    row_of("a.json", 1, 1, 0),
+    @statetest.FileReport::skipped("b.json", @statetest.NoFork, "no Cancun"),
+  ])
+  assert_eq(totals.bad_files, 1)
+  // 默认：老 fork 的 fixture 属于语料结构，不该让整批变红。
+  assert_eq(totals.exit_code(false), 0)
+  // strict：证据要完整，覆盖缺口必须可见。
+  assert_eq(totals.exit_code(true), 1)
+}
+
 // ---------------------------------------------------------------------------
 // JSON 报告
 // ---------------------------------------------------------------------------
 
 ///|
-test "report_json 合法、可还原，并带 corpus pin 与 stub 自述" {
-  let text = @statetest.report_json("Cancun", [row_of("a.json", 3, 1, 2)])
+fn options_for(
+  shard_index : Int32,
+  shard_count : Int32,
+  strict : Bool,
+) -> @statetest.ReportOptions {
+  {
+    ..@statetest.ReportOptions::new("Cancun"),
+    shard_index,
+    shard_count,
+    strict,
+  }
+}
+
+///|
+test "report_json 合法、可还原，并带 corpus pin、shard、strict 与 stub 自述" {
+  let text = @statetest.report_json(options_for(1, 4, true), [
+    row_of("a.json", 3, 1, 2),
+  ])
   assert_canonical_json(text)
   assert_true(text.contains("\"tag\": \"tests-v5.4.0\""))
   assert_true(
     text.contains("\"commit\": \"4f68564f47c7e577ad6cbb570858316f5ff0e7bb\""),
   )
+  assert_true(text.contains("\"build\": \"stable\""))
   assert_true(text.contains("\"format\": \"state_test\""))
   assert_true(text.contains("\"fork\": \"Cancun\""))
+  // 分片与判据必须进报告：否则 1/4 的报告与全量报告长得一样。
+  assert_true(text.contains("\"shard\": {"))
+  assert_true(text.contains("\"index\": 1"))
+  assert_true(text.contains("\"count\": 4"))
+  assert_true(text.contains("\"strict\": true"))
   assert_true(
     text.contains("\"executor\": \"stub (no interpreter; G0 harness only)\""),
   )
@@ -215,10 +261,38 @@ test "report_json 合法、可还原，并带 corpus pin 与 stub 自述" {
 }
 
 ///|
+test "report_json 带八类 mismatch 计数与 bad 字段" {
+  let bad_row = @statetest.FileReport::skipped(
+    "old.json",
+    @statetest.NoFork,
+    "fork `Cancun` not present; available: Berlin",
+  )
+  let text = @statetest.report_json(options_for(0, 1, false), [
+    row_of("a.json", 3, 1, 2),
+    bad_row,
+  ])
+  assert_canonical_json(text)
+  for
+    key in [
+      "missing_accounts", "extra_accounts", "nonce_mismatches", "balance_mismatches",
+      "code_mismatches", "missing_slots", "extra_slots", "slot_value_mismatches",
+    ] {
+    assert_true(text.contains("\"\{key}\":"))
+  }
+  // 跑通的行 `bad` 为 null；跳过的行带上类别与原因。
+  assert_true(text.contains("\"bad\": null"))
+  assert_true(text.contains("\"bad\": \"no_fork\""))
+  assert_true(text.contains("available: Berlin"))
+  assert_true(text.contains("\"bad_files\": 1"))
+  assert_true(text.contains("\"no_fork_files\": 1"))
+  assert_true(text.contains("\"unparsable_files\": 0"))
+}
+
+///|
 test "report_json 同一输入两次逐字节一致" {
   let rows = [row_of("b.json", 2, 0, 2), row_of("a.json", 1, 1, 0)]
-  let first = @statetest.report_json("Cancun", rows)
-  let second = @statetest.report_json("Cancun", rows)
+  let first = @statetest.report_json(options_for(0, 1, false), rows)
+  let second = @statetest.report_json(options_for(0, 1, false), rows)
   assert_eq(first, second)
   assert_canonical_json(first)
 }
@@ -227,7 +301,9 @@ test "report_json 同一输入两次逐字节一致" {
 test "report_json 转义反斜杠与引号" {
   // 路径实际内容：dir\sub"quoted.json
   let path = "dir\\sub\"quoted.json"
-  let text = @statetest.report_json("Cancun", [row_of(path, 1, 0, 1)])
+  let text = @statetest.report_json(options_for(0, 1, false), [
+    row_of(path, 1, 0, 1),
+  ])
   // 转义后必须是合法 JSON，且 `parse → stringify` 能原样还原（转义可逆）。
   assert_canonical_json(text)
   // JSON 文本里应出现 `\\` 与 `\"` 的转义形态。
@@ -236,11 +312,12 @@ test "report_json 转义反斜杠与引号" {
 
 ///|
 test "report_json 空文件列表时 totals 全零" {
-  let text = @statetest.report_json("Cancun", [])
+  let text = @statetest.report_json(options_for(0, 1, false), [])
   assert_canonical_json(text)
   assert_true(text.contains("\"files\": 0"))
   assert_true(text.contains("\"cases\": 0"))
   assert_true(text.contains("\"fail\": 0"))
+  assert_true(text.contains("\"bad_files\": 0"))
   // 空数组要渲染成 `[]`。
   assert_true(text.contains("\"files\": []"))
 }
