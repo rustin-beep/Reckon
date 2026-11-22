@@ -61,7 +61,8 @@
     `original_storage`；
   - `set_balance` / `set_nonce` / `set_code` / `set_storage` / `create_account` /
     `destroy_account`；
-  - `snapshot` / `revert`（`Snapshot` 字段私有，外部无法伪造）、`accounts`、`diff`；
+  - `snapshot` / `revert`（`Snapshot` 字段私有 + id 进程内唯一，外部无法伪造，
+    且句柄**只对产生它的 `State` 有效**）、`accounts`、`diff`；
   - `StateDiff` / `AccountDiff` / `StorageDiff`（字段公开，供 B08 读取）；
     `StateDiff::is_empty` / `length`；错误 `StateError`（重复地址、重复槽、失效快照）。
 - 语义口径（测试逐条对应）：
@@ -71,8 +72,8 @@
     导出与 diff 都不含零槽；
   - **original_storage**：相对构造时 base，构造后新建账户原值为 0；
   - **snapshot/revert**：日志只记旧值、逆序撤销，覆盖 balance/nonce/code/槽/创建/删除；
-    嵌套 LIFO，回滚会作废该快照及更晚的快照，重复回滚与伪造句柄都是
-    `InvalidSnapshot`；base 与 `original_storage` 不受回滚影响；
+    嵌套 LIFO，回滚会作废该快照及更晚的快照，重复回滚、伪造句柄与**异实例句柄**
+    都是 `InvalidSnapshot`；base 与 `original_storage` 不受回滚影响；
   - **排序**：`accounts()` / `diff()` 的账户按 `Address` 比较序、槽按 `U256` 比较序
     显式排序，`Map` 迭代序不外泄，输出逐字节可复现；
   - **diff**：创建 `before=None`，删除或写空 `after=None`，仅槽变化仍出现，
@@ -80,9 +81,26 @@
     current 不共享 storage 表），输入零槽丢弃、empty 账户按不存在处理。
   - `State` 的字段用 `priv` 修饰：`pub struct` 的普通字段在包外**可读**，
     `Map` 一旦可读就能被外部改，故必须显式 `priv`。
-- 测试：新增 54 条（`state` 53 + `types` 1），三后端 **166/166**；含 200 步固定种子
+- 测试：新增 57 条（`state` 56 + `types` 1），三后端 **169/169**；含 200 步固定种子
   LCG 参考模型对拍（整表深拷贝式快照、LIFO 回滚、每步比对 canonical 导出）。
   变异验证：回滚不清零槽 → 2 条红；日志改正序撤销 → 7 条红；diff 忽略仅槽变化 → 2 条红。
+
+### 修复（B07 审阅）
+
+- **`Snapshot` 不绑定 `State` 实例，跨实例混用会静默损坏状态**（P2）：句柄只存
+  每实例自增的 id，`revert` 只在本实例的快照栈里按 id 查找、不校验归属；两个
+  `State` 都从 0 起发号，于是 A 的句柄能在 B 上撞到同 id 的活快照。探针实测三条
+  静默失败路径：① 命中后回滚错误数据（B 的余额被 A 的快照点覆盖）；② 连带把
+  B 自己的句柄一起弹掉；③ 外来句柄的 `journal_len` 大于 B 的日志长度时既不报错
+  也不回滚，只静默毁掉 B 的快照栈。原「`Snapshot` 字段私有，外部无法伪造」的
+  说法过强——私有只防伪造，不防混用。
+  修法：id 改由包内全局分配器发号（`UInt64`，进程内唯一），`State` 删掉 `next_id`；
+  `revert` 逻辑不动，外来句柄在本实例栈里必然找不到，直接走 `InvalidSnapshot`。
+  没有采用「owner token + `physical_equal`」：那会把正确性押在「同值结构体字面量
+  不共享」这一实现细节上（虽经三后端探针验证当前成立），不如整数 id 稳。
+  回归测试 3 条（异实例、深句柄、两实例合法句柄互不干扰）：改前 2 条红、改后
+  全绿；白盒断言从「`next_id` 等于 0/1/3」改为「句柄 id 与栈内 mark 一致」「同实例
+  id 严格递增」。
 
 ### 修复（B06 审阅）
 

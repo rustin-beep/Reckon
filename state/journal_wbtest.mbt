@@ -29,11 +29,10 @@ fn wentry(
 }
 
 ///|
-test "journal 初始为空、id 从 0 开始" {
+test "journal 初始为空、快照栈为空" {
   let s = State::new()
   assert_eq(s.journal.length(), 0)
   assert_eq(s.snapshots.length(), 0)
-  assert_eq(s.next_id, 0)
   assert_eq(s.base.length(), 0)
   assert_eq(s.current.length(), 0)
 }
@@ -85,7 +84,8 @@ test "snapshot 记录当时的日志长度" {
   let snap = s.snapshot()
   assert_eq(s.snapshots.length(), 1)
   assert_eq(s.snapshots[0].journal_len, 2)
-  assert_eq(s.next_id, 1)
+  // 句柄 id 与栈内 mark 的 id 必须一致（id 来自全局分配器，不再是 0/1 这样的序号）
+  assert_eq(snap.id, s.snapshots[0].id)
   s.set_nonce(a, 1UL)
   assert_eq(s.journal.length(), 3)
   s.revert(snap)
@@ -97,12 +97,14 @@ test "snapshot 记录当时的日志长度" {
 test "revert 把快照栈截断到目标之前" {
   let s = State::new()
   let snap_a = s.snapshot()
-  let _ = s.snapshot()
-  let _ = s.snapshot()
+  let snap_b = s.snapshot()
+  let snap_c = s.snapshot()
+  // 全局分配器：同一实例内 id 也严格递增
+  assert_true(snap_a.id < snap_b.id)
+  assert_true(snap_b.id < snap_c.id)
   assert_eq(s.snapshots.length(), 3)
   s.revert(snap_a)
   assert_eq(s.snapshots.length(), 0)
-  assert_eq(s.next_id, 3)
 }
 
 ///|

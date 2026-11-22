@@ -28,15 +28,37 @@ enum Change {
 }
 
 ///|
-/// 快照句柄。字段私有：只能由 `State::snapshot` 产生，外部无法伪造。
+/// 快照 id 的全局分配器。
+///
+/// 句柄必须**只对产生它的 `State` 有效**：id 在进程内唯一，外来句柄在本实例的
+/// 快照栈里必然找不到，`revert` 直接走 `InvalidSnapshot`。若按实例从 0 起发号，
+/// 两个 `State` 的首个句柄会撞号，异实例 `revert` 就会静默回滚错误的数据（甚至
+/// 只毁掉对方的快照栈而不报错）。
+priv struct SnapshotIds {
+  mut next : UInt64
+}
+
+///|
+let snapshot_ids : SnapshotIds = { next: 0UL, }
+
+///|
+fn next_snapshot_id() -> UInt64 {
+  let id = snapshot_ids.next
+  snapshot_ids.next = id + 1UL
+  id
+}
+
+///|
+/// 快照句柄。字段私有：只能由 `State::snapshot` 产生（外部无法伪造），
+/// 且 id 全局唯一，因此只对产生它的那个 `State` 有效。
 pub struct Snapshot {
-  priv id : Int32
+  priv id : UInt64
 }
 
 ///|
 /// 快照栈里的一项：句柄 id + 当时的日志长度。
 struct SnapshotMark {
-  id : Int32
+  id : UInt64
   journal_len : Int32
 }
 

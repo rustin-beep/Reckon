@@ -142,14 +142,12 @@ pub struct State {
   priv journal : Array[Change]
   /// 快照栈（LIFO）。
   priv snapshots : Array[SnapshotMark]
-  /// 快照 id 分配器。
-  priv mut next_id : Int32
 }
 
 ///|
 /// 空状态：没有账户，base 也为空。
 pub fn State::new() -> State {
-  { base: Map([]), current: Map([]), journal: [], snapshots: [], next_id: 0, }
+  { base: Map([]), current: Map([]), journal: [], snapshots: [], }
 }
 
 ///|
@@ -187,7 +185,7 @@ pub fn State::from_accounts(
       base.set(entry.address, rec)
     }
   }
-  { base, current: copy_table(base), journal: [], snapshots: [], next_id: 0, }
+  { base, current: copy_table(base), journal: [], snapshots: [], }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,9 +364,11 @@ pub fn State::destroy_account(self : State, address : @types.Address) -> Unit {
 
 ///|
 /// 压一个快照，返回不透明句柄。
+///
+/// id 来自包内的全局分配器（不是每实例从 0 起），因此外来句柄不可能在本实例的
+/// 快照栈里撞号 —— 这是 `revert` 能安全拒绝异实例句柄的前提。
 pub fn State::snapshot(self : State) -> Snapshot {
-  let id = self.next_id
-  self.next_id = id + 1
+  let id = next_snapshot_id()
   self.snapshots.push({ id, journal_len: self.journal.length(), })
   { id, }
 }

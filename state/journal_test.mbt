@@ -157,6 +157,60 @@ test "revert 失效快照与重复回滚" {
 }
 
 ///|
+test "revert 拒绝另一个 State 的快照" {
+  // 两个实例各拍一个快照：若 id 按实例从 0 起，两边会撞号
+  let a = addr(1)
+  let s1 = @state.State::new()
+  let s2 = @state.State::new()
+  let foreign = s1.snapshot()
+  let own = s2.snapshot()
+  s2.set_balance(a, u(7))
+  expect_invalid(() => s2.revert(foreign))
+  // 外来句柄不得改动本实例的数据，也不得弹掉本实例的快照
+  assert_eq(s2.basic(a).balance, u(7))
+  s2.revert(own)
+  assert_eq(s2.basic(a).balance, u(0))
+  assert_true(!s2.exists(a))
+}
+
+///|
+test "revert 深句柄（journal_len 更大）也不损坏本实例" {
+  let a = addr(1)
+  let s1 = @state.State::new()
+  let s2 = @state.State::new()
+  // 外来句柄的 journal_len 比本实例整条日志还长
+  s1.set_balance(a, u(1))
+  s1.set_nonce(a, 1UL)
+  s1.set_storage(a, u(1), u(1))
+  let deep = s1.snapshot()
+  let own = s2.snapshot()
+  s2.set_balance(a, u(9))
+  expect_invalid(() => s2.revert(deep))
+  assert_eq(s2.basic(a).balance, u(9))
+  assert_eq(s2.accounts().length(), 1)
+  // 本实例自己的句柄仍然能用
+  s2.revert(own)
+  assert_eq(s2.basic(a).balance, u(0))
+  assert_true(!s2.exists(a))
+}
+
+///|
+test "两个 State 的合法快照互不干扰" {
+  let a = addr(1)
+  let s1 = @state.State::new()
+  let s2 = @state.State::new()
+  let k1 = s1.snapshot()
+  let k2 = s2.snapshot()
+  s1.set_balance(a, u(1))
+  s2.set_balance(a, u(2))
+  s2.revert(k2)
+  assert_eq(s2.basic(a).balance, u(0))
+  assert_eq(s1.basic(a).balance, u(1))
+  s1.revert(k1)
+  assert_eq(s1.basic(a).balance, u(0))
+}
+
+///|
 test "revert 空快照是 no-op" {
   let a = addr(1)
   let s = @state.State::from_accounts([mk_entry(a, 1, 100, [(1UL, 7UL)])])
